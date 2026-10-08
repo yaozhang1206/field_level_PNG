@@ -122,7 +122,8 @@ Establish the information content of DESI DR1 QSO+LRG on f_NL with no systematic
 (B) compute the field-level Gaussian Fisher under the full bias model to get the idealized σ(f_NL).
 
 ### 5.2 Environment (Delta)
-- Partition: CPU (`cpu` on Delta) or an interactive node. No GPU needed.
+- Partition: CPU (`cpu` on Delta) for Part A and the closed-form checks. Part B's Schur-complement
+  Fisher runs on CPU in < 1 h at 80³ but is minutes on one GPU; use a GPU for the 160³ runs.
 - Python env: numpy, scipy, classy (CLASS) and/or DISCO-DJ (discodj; its DISCO-EB module can replace
   CLASS and gives autodiff derivatives of P_lin and T_Φ→δ), astropy, healpy, fitsio/h5py, matplotlib, jax (CPU).
   Optional: cosmoprimo (DESI wrapper), pypower, mockfactory (DESI, for randoms/window).
@@ -179,19 +180,67 @@ explicitly in V_eff.
 - Bias model: Euclid Eq. 4 (b1, b2, bK, bφ f_NL φ_g, bφδ f_NL δ φ_g), RSD via Kaiser at the field level.
 
 **Method**
-At k ≤ 0.1 with a Gaussian likelihood the field-level Fisher for the global parameters, after
-marginalizing the field, reduces per mode to the Gaussian-field information plus the tree-level
-bispectrum contribution. Implement in two tiers:
-1. **Tier 1 (two-point, mode-by-mode)**: for each k-mode and shell, information on f_NL from the
-   galaxy–galaxy power with the full k-dependence of bφ/T(k), summed over modes inside the survey
-   volume (no multipole compression, both μ-dependence and the k^-2 term retained). This should
-   slightly exceed Part A at the same k range because nothing is compressed.
-2. **Tier 2 (add tree-level bispectrum)**: add the Fisher information from the galaxy bispectrum at
-   tree level with local-PNG primordial bispectrum + bφδ term + gravitational F2, Gaussian
-   covariance with shot noise. Use standard Fisher-bispectrum code (e.g. adapt Karagiannis et al.
-   2018 formulae). This approximates the extra information field-level inference captures beyond P(k).
-3. Marginalize over (b1, b2, bK, s_n) per shell; run with bφ, bφδ fixed (UMF) and with a 40% Gaussian prior.
-4. Report σ(f_NL): QSO only, LRG only, combined; k_max = 0.05 and 0.1; p=1.6 and p=1.0 for QSOs.
+
+Model: d(x) = M(ε, θ)(x) + n(x), with ε the white-noise field (unit Gaussian prior), θ the global
+parameters (f_NL, per-shell b1, b2, bK, s_n; bφ, bφδ either fixed by UMF or sampled with 40% prior),
+and n Gaussian with variance σ²(x) = ⟨N(x)⟩ (σ² → ∞, i.e. zero weight, outside the footprint).
+
+Joint Fisher at the fiducial point: F = Jᵀ N⁻¹ J + P, with J = ∂M/∂(ε, θ), N⁻¹ = diag(1/σ²),
+P = identity on the ε block (white-noise prior) and the θ-prior on the θ block.
+Marginalize ε by the Schur complement:
+
+    F_marg = F_θθ − F_θε F_εε⁻¹ F_εθ ,   σ(f_NL) = sqrt[(F_marg⁻¹)_{f_NL,f_NL}]
+
+F_εε is (N_ε × N_ε) with N_ε = 80³ or 160³ and is never formed. Everything is done with operators:
+
+- `jvp_eps(v)`  = ∂M/∂ε · v      (jax.jvp)      → field
+- `vjp_eps(w)`  = (∂M/∂ε)ᵀ · w   (jax.vjp)      → ε-vector
+- `jac_theta`   = ∂M/∂θ_i for each i (jax.jacfwd or n_θ jvps) → n_θ fields
+
+Steps:
+1. F_θθ[i,j] = Σ_x jac_theta_i(x) jac_theta_j(x) / σ²(x)  (+ θ-prior).
+2. F_θε row i = vjp_eps(jac_theta_i / σ²).  (n_θ VJPs.)
+3. For each i, solve (JᵀN⁻¹J + I) v_i = F_εθ[:, i] by conjugate gradient
+   (jax.scipy.sparse.linalg.cg), matvec(v) = vjp_eps(jvp_eps(v)/σ²) + v.
+   Well conditioned; expect 50–200 iterations. Each iteration = one jvp + one vjp through 2LPT.
+4. F_marg = F_θθ − F_θε · [v_1 … v_nθ]; invert; read off σ(f_NL).
+
+Cost: n_θ × ~100 × (jvp+vjp) ≈ a few thousand 2LPT forward/adjoint passes at 80³ → minutes on a
+GPU, < 1 h on CPU. This is the Laplace approximation at the truth and includes the nonlinear
+couplings present in the linearized model (f_NL φ², bφδ δφ, 2LPT mode coupling). It depends on the
+fiducial ε realization: average F_marg over ~5 realizations and report the scatter.
+
+Closed-form cross-checks (must be implemented; they validate the operator code):
+- **Tier 1 (Gaussian, two-point)**: set 2LPT → linear, drop b2, bK, bφδ. The Schur result must match
+  F_ij = Σ_modes ½ [∂ln P̃(k,μ)/∂θ_i][∂ln P̃(k,μ)/∂θ_j], P̃ = P_g(k,μ) + 1/n̄, summed over every
+  independent k-mode in the survey volume, per redshift shell. This is Part A without multipole
+  compression and with shell-by-shell evolution of (b1 − p); expect only ~10–20% tighter than Part A.
+- **Tier 2 (tree-level bispectrum)**: add F_ij += Σ_triangles [∂B_g/∂θ_i][∂B_g/∂θ_j] / Var(B_g), with
+  B_g = primordial local bispectrum (through T_Φ→δ) + gravitational F2 term (b1, b2, bK) + bφ/bφδ
+  cross terms, Var(B_g) ≈ s V P̃(k1)P̃(k2)P̃(k3)/N_tri (RSD per Karagiannis et al. 2018).
+  Tier 1 + Tier 2 is an approximation to the Schur result, not an independent target; a disagreement
+  > ~30% at k_max = 0.05 indicates a bug in one of them.
+
+Implementation notes:
+- Stay in ε (white noise), not δ_L: the prior block is then the identity and CG converges fast.
+  Parametrizing by δ_L makes the prior P_lin(k)⁻¹ and the system ill-conditioned.
+- Voxels outside the footprint / radial range: weight 1/σ² = 0 exactly, never σ² = 0.
+- σ²(x) spans ~3 orders of magnitude across the QSO volume; check the CG tolerance against the
+  smallest-weight shells.
+- Build everything per redshift shell; f_NL is shared across shells, all bias/noise parameters are per shell.
+
+Report σ(f_NL): QSO only, LRG only, combined; k_max = 0.05 (80³) and 0.1 (160³);
+p = 1.6 and 1.0 for QSOs; bφ fixed and sampled (40% prior); mean and scatter over ε realizations.
+
+**Suggested functions (fisher_field.py / fisher_closed.py)**
+```
+build_model(theta, eps, cfg)     -> predicted counts field   # DISCO-DJ 2LPT + PNG + bias + RSD + selection
+jvp_eps, vjp_eps, jac_theta      -> operator wrappers
+cg_solve(matvec, rhs, tol=1e-6)  -> jax.scipy.sparse.linalg.cg
+schur_fisher(theta_fid, eps_fid, prior_theta, cfg) -> F_marg (n_theta × n_theta)
+gaussian_mode_sum(cfg)           -> Tier 1 closed form (must match schur_fisher in the linear limit)
+bispectrum_tree(cfg)             -> Tier 2 closed form (cross-check)
+```
 
 **Go/no-go**: combined σ(f_NL) ≲ 5 at k_max=0.1 with bias marginalized and bφ sampled with 40% prior.
 If ≳ 7: reframe toward DESI Y5 and/or add CMB-lensing cross-correlation.
@@ -214,8 +263,9 @@ desi_fnl_fli/
     model_pk.py
     geometry.py
     fisher_pk.py
-    fisher_field.py
-    bispectrum_fisher.py
+    forward_model.py        (DISCO-DJ 2LPT + PNG + bias + RSD + selection; shared with Stage 2)
+    fisher_field.py         (Schur-complement Fisher via jvp/vjp + CG)
+    fisher_closed.py        (Tier 1 mode sum, Tier 2 tree-level bispectrum)
   configs/*.yaml           (tracer, z-range, b1, p, k-range, weights)
   scripts/run_fisher_pk.py, run_fisher_field.py
   results/
