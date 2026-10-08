@@ -153,9 +153,22 @@ Establish the information content of DESI DR1 QSO+LRG on f_NL with no systematic
    Parameters $\theta = (f_{\rm NL}, b_1, s_{n0}, \Sigma_s)$. Verify $b_\phi(b_1,p)$.
 3. `geometry.py`: $n(z)$ per tracer, $V_{\rm eff} = \int \left[\frac{\bar n(z)P_0}{1+\bar n(z)P_0}\right]^2 dV$, using the paper's $P_0$ values.
    First pass: analytic shell volumes × sky fraction. Second pass: from randoms.
-4. `fisher_pk.py`: Gaussian covariance per $k$-bin,
-   ${\rm Cov}[P_\ell, P_{\ell'}](k)$ from the standard Kaiser-Gaussian formulae with shot noise $1/\bar n$,
-   $N_{\rm modes} = V_{\rm eff}\,k^2\Delta k/(2\pi^2)$. Numerical derivatives $\partial P_\ell/\partial\theta$ (or JAX autodiff).
+4. `fisher_pk.py`: Gaussian covariance per $k$-bin of width $\Delta k$ for the multipoles
+   $P_\ell$, $\ell\in\{0,2\}$, with FKP weighting integrated over the survey $n(z)$
+   (Feldman–Kaiser–Peacock / Grieb et al. 2016):
+   $${\rm Cov}\big[P_\ell(k), P_{\ell'}(k)\big] = (2\ell+1)(2\ell'+1)\,\frac{2(2\pi^2)}{k^2\Delta k}
+     \int_0^1 d\mu\; L_\ell(\mu) L_{\ell'}(\mu)\, S(k,\mu),$$
+   $$S(k,\mu) = \frac{\int dV\, n^4 w^4\,[P_g(k,\mu) + 1/n_{\rm obs}]^2}{\left(\int dV\, n^2 w^2\right)^2},
+     \qquad w = \frac{1}{1 + nP_0},$$
+   where $n = n_{\rm NX}(z)$ sets the FKP weights and $n_{\rm obs} = \bar c\,n_{\rm NX}$
+   ($\bar c = A_{\rm eff}/A_{\rm full}$) is the completeness-reduced density that sets the shot noise.
+   Because $n_{\rm obs} w_{\rm tot} = n_{\rm NX}/(1+n_{\rm NX}P_0)$ is independent of completeness,
+   sample variance is set by the full tiled footprint ($A_{\rm full} = 9070\,{\rm deg}^2$) while shot
+   noise is $1/(c\,n_{\rm NX})$. For uniform $n$ in volume $V$ this reduces to
+   ${\rm Var}[P_0] = 2[P_g + 1/n]^2/N_{\rm modes}$ with $N_{\rm modes} = V k^2\Delta k/(2\pi^2)$.
+   Bins in $k$ are independent (block-diagonal); the $\mu$ integral uses Gauss–Legendre on $[0,1]$.
+   Derivatives $\partial P_\ell/\partial\theta$ by JAX autodiff; the covariance is held at the
+   fiducial parameters ($f_{\rm NL}=0$, $s_{n0}=0$, $\Sigma_s = 3$ Mpc/$h$).
    $$F_{ij} = \sum_k \frac{\partial P^{T}}{\partial\theta_i}\,C^{-1}\,\frac{\partial P}{\partial\theta_j}.$$
    Report $\sigma(f_{\rm NL})$ marginalized over $(b_1, s_{n0}, \Sigma_s)$, and also with $b_1$ fixed.
 5. Run configurations:

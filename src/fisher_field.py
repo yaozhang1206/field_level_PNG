@@ -106,7 +106,7 @@ class FieldFisher:
     # ------------------------------------------------------------------------------------------
     # Exact Gaussian-marginal Fisher of the model linearised in eps (Hutchinson trace estimator)
     # ------------------------------------------------------------------------------------------
-    def fisher_marginal(self, n_probes=8, tol=1e-6, maxiter=400, seed=0):
+    def fisher_marginal(self, n_probes=8, tol=1e-6, maxiter=400, seed=0, probe_callback=None, start_probe=0, Fs_prev=None):
         """F_ij = 1/2 Tr[C^-1 dC_i C^-1 dC_j] with C = J_e J_e^T + N (data space), dC_i = dJ_i J^T + J dJ_i^T,
         dJ_i v = d/dtheta_i [J_e(theta) v] (second-order autodiff). Estimated with Rademacher probes z:
             F_ij ~ 1/2 <(C^-1 z)^T dC_i (C^-1 dC_j z)>_z.
@@ -130,30 +130,36 @@ class FieldFisher:
             e_i = jnp.zeros(n).at[i].set(1.0)
             g = lambda th: jax.vjp(lambda e: f_bwd(e, th), self.eps_fid)[1](w)[0]
             return jax.jvp(g, (self.theta_fid,), (e_i,))[1]
-        dJ_v = jax.jit(dJ_v, static_argnums=1); dJT_w = jax.jit(dJT_w, static_argnums=1)
         var = 1.0 / self.invvar
         Cmv = jax.jit(lambda w: Jv(JTw(w)) + var * w)
-        def dC(w, i):                                   # dC_i w = dJ_i (J^T w) + J (dJ_i^T w)
-            return dJ_v(JTw(w), i) + Jv(dJT_w(w, i))
+        # dC_i w = dJ_i (J^T w) + J (dJ_i^T w); one jitted program per parameter i
+        dC = jax.jit(lambda w, i: dJ_v(JTw(w), i) + Jv(dJT_w(w, i)), static_argnums=1)
+        solve = jax.jit(lambda b: cg(Cmv, b, tol=tol, maxiter=maxiter)[0])
+        import resource
         key = jax.random.PRNGKey(seed)
-        F = np.zeros((n, n)); Fs = []
+        Fs = list(Fs_prev) if Fs_prev else []
+        F = sum(Fs) if Fs else np.zeros((n, n))
         for p_ in range(n_probes):
             key, sub = jax.random.split(key)
+            if p_ < start_probe:
+                continue
             z = jax.random.rademacher(sub, (self.n_data,), dtype=jnp.float64)
-            Cinv_z, _ = cg(Cmv, z, tol=tol, maxiter=maxiter)
-            y = []
-            for j in range(n):
-                yj, _ = cg(Cmv, dC(z, j), tol=tol, maxiter=maxiter)
-                y.append(yj)
+            Cinv_z = solve(z)
+            W = jnp.stack([dC(Cinv_z, i) for i in range(n)])         # (n, n_data): dC_i C^-1 z
             Fp = np.zeros((n, n))
-            for i in range(n):
-                w_i = dC(Cinv_z, i)                       # dC_i C^-1 z  (dC_i symmetric)
-                for j in range(n):
-                    Fp[i, j] = 0.5 * float(jnp.vdot(w_i, y[j]))
+            for j in range(n):
+                yj = solve(dC(z, j))                                  # C^-1 dC_j z
+                Fp[:, j] = 0.5 * np.asarray(W @ yj)
+                del yj
+            del W, Cinv_z, z
             Fp = 0.5 * (Fp + Fp.T)
-            Fs.append(Fp); F += Fp
-            self.log(f"  probe {p_+1}/{n_probes}: sigma(f_NL) running = {sigma_of(F / (p_+1) + self.prior):.2f}  {_t.time()-t0:.0f}s")
-        self.F_marginal = F / n_probes + self.prior
+            Fs.append(Fp); F = F + Fp
+            rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1e6
+            self.log(f"  probe {p_+1}/{n_probes}: sigma(f_NL) running = {sigma_of(F / len(Fs) + self.prior):.2f}  {_t.time()-t0:.0f}s  maxRSS {rss:.1f} GB")
+            if probe_callback is not None:
+                probe_callback(Fs)
+        self.F_marginal = F / len(Fs) + self.prior
+        self.F_marginal_probes = Fs
         self.F_marginal_probe_std = np.std([sigma_of(Fp + self.prior) if Fp[0, 0] > 0 else np.nan for Fp in Fs])
         return self.F_marginal
 
