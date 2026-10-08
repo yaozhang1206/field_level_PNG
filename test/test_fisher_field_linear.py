@@ -29,7 +29,8 @@ else:
     mask = dr1_angular_mask(64)
     fm = ForwardModel(cosmo, shells, L=L, res=res, nz_funcs=nz, ang_mask=mask)
     sg = ShellGeometry(geoms)
-lines = [f"res={res}, {'periodic box, no window' if BOX else 'DR1 footprint'}; voxels: " + ", ".join(f"{t}: {int(fm.footprint[t].sum())}" for t in fm.tracers)]
+lines = [f"res $={res}$, {'periodic box, no window' if BOX else 'DR1 footprint'}; voxels: " + ", ".join(f"{t}: {int(fm.footprint[t].sum())}" for t in fm.tracers),
+         r"Linear model: $\langle N\rangle = \bar nV\,[1 + (b_1 + b_\phi f_{\rm NL}/T(k) + f\mu_z^2)\,D\,\delta_L]$; Schur $= F_{\theta\theta} - F_{\theta\varepsilon}F_{\varepsilon\varepsilon}^{-1}F_{\varepsilon\theta}$; Tier 1 weights: exact $\partial P\partial P/(P+N)^2$, Laplace $\partial P\partial P/(2P(P+N))$ per mode."]
 rows = []
 ref = {}
 for tr in ("QSO", "LRG", "QSO+LRG"):
@@ -50,7 +51,7 @@ for r in range(nreal):
         if tr == "QSO+LRG":
             F_last, F_lap, F_exact = F_s, ref[tr][0], ref[tr][1]
     rows.append(row)
-    lines.append(f"- realisation {r}: sigma(f_NL): " + "; ".join(
+    lines.append(f"- realisation {r}: $\\sigma(f_{{\\rm NL}})$: " + "; ".join(
         f"{tr}: Schur {row[tr]['schur']:.2f} vs Tier1-Laplace {row[tr]['tier1_laplace']:.2f} (exact Gaussian {row[tr]['tier1_exact']:.2f}) [{row[tr]['time']:.0f}s, CG {row[tr]['cg_resid_max']:.0e}]" for tr in ("QSO", "LRG", "QSO+LRG")))
 # diagonal comparison figure
 fig, ax = plt.subplots(figsize=(7, 3.4))
@@ -64,9 +65,9 @@ ax.set_xticks(x); ax.set_xticklabels(np.array(names)[ok], rotation=60, fontsize=
 ax.set_ylabel("ratio of Fisher diagonals"); ax.legend(fontsize=8); ax.set_title(f"Linear-model operator check, {res}^3, last realisation")
 save_fig(fig, f"fisher_field_linear_check_res{res}{'_box' if BOX else ''}")
 json.dump(rows, open(ROOT / "results" / f"fisher_field_linear_check_res{res}{'_box' if BOX else ''}.json", "w"), indent=1)
-lines += ["", "Interpretation: in the periodic box, Schur must equal Tier1-Laplace (same modes, no window) up to the realisation",
-          "scatter of the few largest-scale modes; with the DR1 footprint the window removes the k ~ k_f modes that dominate the",
-          "k_min = k_f mode sum, so Schur is larger than the full-box closed form (compare with the k_min = 0.003 closed form).",
-          "The Schur (joint-Gaussian) estimate is not the exact marginal: per mode it is (P+N)/(2P) times the Gaussian-field Fisher."]
+lines += ["", r"Interpretation: in the periodic box, Schur must equal Tier1-Laplace (same modes, no window) up to the realisation",
+          r"scatter of the few largest-scale modes; with the DR1 footprint the window removes the $k \sim k_f$ modes that dominate the",
+          r"$k_{\min} = k_f$ mode sum, so Schur is larger than the full-box closed form (compare with the $k_{\min} = 0.003$ closed form).",
+          r"The Schur (joint-Gaussian) estimate is not the exact marginal: per mode it is $(P+N)/(2P)$ times the Gaussian-field Fisher."]
 write_note(f"fisher_field_linear_check_res{res}{'_box' if BOX else ''}", "Schur-complement operator check on the linear model" + (" (periodic box)" if BOX else " (DR1 footprint)"), lines)
 print("\n".join(lines))

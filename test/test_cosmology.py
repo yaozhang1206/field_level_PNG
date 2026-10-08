@@ -6,14 +6,14 @@ from cosmology import Cosmology, CosmoParams, PLANCK18
 
 k = np.logspace(np.log10(0.002), np.log10(0.5), 80)
 rows, lines = [], []
-for mnu, lab in [(0.06, "m_nu = 0.06 eV"), (0.0, "m_nu = 0 (massless)")]:
+for mnu, lab in [(0.06, r"$m_\nu = 0.06$ eV"), (0.0, r"$m_\nu = 0$ (massless)")]:
     cp = dataclasses.replace(PLANCK18, m_nu=mnu)
     t0 = time.time(); c_eb = Cosmology(cp, backend="discoeb"); t_eb = time.time() - t0
     t0 = time.time(); c_cl = Cosmology(cp, backend="class");   t_cl = time.time() - t0
     r = np.asarray(c_eb.P_lin(k, 0.0) / c_cl.P_lin(k, 0.0)) - 1
     rows.append((lab, r))
-    lines.append(f"- {lab}: sigma8 DISCO-EB {c_eb.sigma8():.4f} vs CLASS {c_cl.sigma8():.4f}; "
-                 f"max|dP/P| = {np.abs(r[k<=0.1]).max()*100:.2f}% (k<=0.1), {np.abs(r[k<=0.3]).max()*100:.2f}% (k<=0.3); "
+    lines.append(f"- {lab}: $\\sigma_8$ DISCO-EB {c_eb.sigma8():.4f} vs CLASS {c_cl.sigma8():.4f}; "
+                 f"$\\max|\\Delta P/P|$ = {np.abs(r[k<=0.1]).max()*100:.2f}% ($k\\le0.1$), {np.abs(r[k<=0.3]).max()*100:.2f}% ($k\\le0.3$); "
                  f"time {t_eb:.0f}s / {t_cl:.0f}s")
 fig, ax = plt.subplots(figsize=(6, 3.4))
 for lab, r in rows:
@@ -23,10 +23,10 @@ ax.axvline(0.1, color="k", ls=":", lw=0.8); ax.set_xlabel("k [h/Mpc]"); ax.set_y
 ax.set_title("Linear P(k), Planck 2018, z=0 (T normalised at k=1e-4)"); ax.legend(fontsize=8)
 save_fig(fig, "cosmology_discoeb_vs_class")
 worst = max(np.abs(r[k <= 0.1]).max() for _, r in rows)
-lines = ["Both backends use the same P_Phi(k) and growth; only T(k) differs (normalised to 1 at k_min).",
-         "DISCO-EB: RECFAST, lmax=11, nqmax=3, rtol=1e-5; solver precision/lmax/Neff changes move the result by < 0.1%.", ""] + lines + [
-         "", f"Result: {'PASS' if worst < 0.005 else 'FAIL'} against the 0.5% target (worst {worst*100:.2f}% at k<=0.1).",
-         "A ~1% P_lin offset changes sigma(f_NL) by ~0.5% and is irrelevant for the Stage-1 go/no-go.",
+lines = [r"Both backends use the same $P_\Phi(k)$ and growth; only $T(k)$ differs (normalised to 1 at $k_{\min}$).",
+         r"DISCO-EB: RECFAST, $\ell_{\max}=11$, $n_{q,\max}=3$, rtol $=10^{-5}$; solver precision/$\ell_{\max}$/$N_{\rm eff}$ changes move the result by < 0.1%.", ""] + lines + [
+         "", f"Result: {'PASS' if worst < 0.005 else 'FAIL'} against the 0.5% target (worst {worst*100:.2f}% at $k\\le0.1$).",
+         r"A $\sim1\%$ $P_{\rm lin}$ offset changes $\sigma(f_{\rm NL})$ by $\sim0.5\%$ and is irrelevant for the Stage-1 go/no-go.",
          "Decision: Part A uses CLASS (fast, standard). DISCO-EB stays available for Stage 2 consistency with DISCO-DJ."]
-write_note("cosmology_discoeb_vs_class", "DISCO-EB vs CLASS linear power", lines)
+write_note("cosmology_discoeb_vs_class", "DISCO-EB vs CLASS linear power $P_{\\rm lin}(k)$", lines)
 print("\n".join(lines))

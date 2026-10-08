@@ -54,7 +54,7 @@ for name, c in configs.items():
     fp = FisherPk(cosmo, g, c["z_eff"], c["b1"], c["p"], P0[c["tracer"]], c["kmin"], c["kmax"], nz_kind=NZ_KIND)
     F = fp.fisher(); Fb = fp.fisher(bphi_fnl=True)
     F_all[name] = (fp, F)
-    report(name, F, Fb, extra=f"z_eff={c['z_eff']}, b1={c['b1']}, b_phi={bias_phi(c['b1'], c['p']):.2f}")
+    report(name, F, Fb, extra=f"$z_{{\\rm eff}}={c['z_eff']}$, $b_1={c['b1']}$, $b_\\phi={bias_phi(c['b1'], c['p']):.2f}$")
     print(name, res[name], f"{time.time()-t0:.0f}s", flush=True)
 
 # ---- redshift-shell (optimal-weighting limit) ----------------------------------------------------
@@ -62,7 +62,7 @@ for tr, kmin in [("QSO", 0.003), ("LRG", 0.006)]:
     p = 1.6 if tr == "QSO" else 1.0
     fs = FisherPkShells(cosmo, geom[tr], b1_of_z[tr], p, P0[tr], kmin, 0.08, nshell=10, nz_kind=NZ_KIND)
     F = fs.fisher(); F_all[f"{tr}_shells"] = (fs, F)
-    report(f"{tr}_shells", F, extra=f"10 shells, b1(z) template, p={p}")
+    report(f"{tr}_shells", F, extra=f"10 shells, $b_1(z)$ template, $p={p}$")
     print(f"{tr}_shells", res[f"{tr}_shells"], f"{time.time()-t0:.0f}s", flush=True)
 
 
@@ -120,17 +120,19 @@ save_fig(fig, f"fisher_pk_info_density_{NZ_KIND}")
 # ---- outputs --------------------------------------------------------------------------------------
 json.dump(dict(nz_kind=NZ_KIND, results=res, kcuts=kcuts, geometry={t: g.summary(P0[t]) for t, g in geom.items()},
                configs=configs, desi_targets=DESI), open(ROOT / "results" / f"fisher_pk_{NZ_KIND}.json", "w"), indent=1)
-hdr = [f"Gaussian Fisher, P0+P2, Dk=0.001, FKP-weighted covariance with the DR1 n(z) (NX column); nz_kind={NZ_KIND}",
-       "('full': sample variance over the geometric DR1 footprint, shot noise from the observed density c_bar*NX;",
+hdr = [f"Gaussian Fisher, $P_0+P_2$, $\\Delta k=0.001$, FKP-weighted covariance with the DR1 $n(z)$ (NX column); nz_kind={NZ_KIND}",
+       r"('full': sample variance over the geometric DR1 footprint, shot noise from the observed density $\bar c\,{\rm NX}$;",
        " 'nx': everything over the completeness-weighted effective area).",
-       "Parameters (f_NL, b1, s_n0, Sigma_s); fiducial f_NL=0, s_n0=0, Sigma_s=3 Mpc/h. Cosmology Planck 2018 via CLASS.",
-       f"Geometry: " + "; ".join(f"{t}: V_eff={g.V_eff(P0[t])/1e9:.2f} (Gpc/h)^3, nbar_eff={g.nbar_eff(P0[t]):.2e}, area_eff={g.area_eff_deg2:.0f} deg^2, area_full={g.area_full_deg2:.0f} deg^2, c_bar={g.cbar:.2f}" for t, g in geom.items()),
-       "", "| config | sigma(f_NL) marg. | b1 fixed | Sigma_s fixed | Sigma_s prior 2 | sigma(b_phi f_NL) | DESI clean-mock | notes |",
+       r"Covariance: ${\rm Cov}[P_\ell,P_{\ell'}](k) = (2\ell+1)(2\ell'+1)\,\frac{4\pi^2}{k^2\Delta k}\int_0^1 d\mu\, L_\ell L_{\ell'}\, S(k,\mu)$, "
+       r"$S = \int dV\, n^4 w^4 (P_g + 1/n_{\rm obs})^2 / (\int dV\, n^2 w^2)^2$, $w = 1/(1+nP_0)$.",
+       r"Parameters $(f_{\rm NL}, b_1, s_{n0}, \Sigma_s)$; fiducial $f_{\rm NL}=0$, $s_{n0}=0$, $\Sigma_s=3$ Mpc/$h$. Cosmology Planck 2018 via CLASS.",
+       f"Geometry: " + "; ".join(f"{t}: $V_{{\\rm eff}}={g.V_eff(P0[t])/1e9:.2f}$ (Gpc/$h$)$^3$, $\\bar n_{{\\rm eff}}={g.nbar_eff(P0[t]):.2e}$, $A_{{\\rm eff}}={g.area_eff_deg2:.0f}$ deg$^2$, $A_{{\\rm full}}={g.area_full_deg2:.0f}$ deg$^2$, $\\bar c={g.cbar:.2f}$" for t, g in geom.items()),
+       "", r"| config | $\sigma(f_{\rm NL})$ marg. | $b_1$ fixed | $\Sigma_s$ fixed | $\Sigma_s$ prior 2 | $\sigma(b_\phi f_{\rm NL})$ | DESI clean-mock | notes |",
        "|---|---|---|---|---|---|---|---|"]
 tail = ["", "DESI numbers are the asymmetric EZmock errors (Tables 4-5); the Fisher is symmetric, target is ~20% of the mean.",
-        "'OQE_singlez' evaluates the model at the OQE z_eff/b1 but keeps the FKP n(z) weighting in the covariance;",
-        "'shells' sums 10 redshift shells with the b1(z) template and is the optimal-weighting (OQE) limit.",
-        f"Figures: fisher_pk_kcuts_{NZ_KIND}.png (sigma vs k_max / k_min), fisher_pk_info_density_{NZ_KIND}.png (where the signal is)."]
-write_note(f"fisher_pk_{NZ_KIND}", "Part A: DESI DR1 P(k) Fisher vs Chaussidon et al. 2024", hdr + lines + tail)
+        r"'OQE_singlez' evaluates the model at the OQE $z_{\rm eff}$/$b_1$ but keeps the FKP $n(z)$ weighting in the covariance;",
+        r"'shells' sums 10 redshift shells with the $b_1(z)$ template and is the optimal-weighting (OQE) limit.",
+        f"Figures: fisher_pk_kcuts_{NZ_KIND}.png ($\\sigma$ vs $k_{{\\max}}$ / $k_{{\\min}}$), fisher_pk_info_density_{NZ_KIND}.png (where the signal is)."]
+write_note(f"fisher_pk_{NZ_KIND}", "Part A: DESI DR1 $P(k)$ Fisher vs Chaussidon et al. 2024", hdr + lines + tail)
 print("\n".join(hdr + lines + tail))
 print(f"total {time.time()-t0:.0f}s")

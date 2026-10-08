@@ -43,14 +43,24 @@ class FieldFisher:
             var.append(np.maximum(nb[np.asarray(self.idx[t])], noise_floor))
         self.invvar = jnp.asarray(1.0 / np.concatenate(var))
 
-        def model(eps, theta):
-            out = fm.linear_galaxy_field(eps, theta, layout, rsd) if linear else fm(eps, theta, layout, rsd)
-            return jnp.concatenate([out[t].ravel()[self.idx[t]] for t in self.tracers])
+        # DISCO-DJ's particle scatter has either a custom_jvp (forward mode) or a custom_vjp (reverse mode)
+        # rule, so keep two views of the model: fm_fwd for jvp (in eps or theta, nested), fm_bwd for vjp
+        # and jvp-over-vjp. Both evaluate the same function (adjoint check in test_schur_dense16 / CPU test).
+        import copy
+        self.fm_fwd = copy.copy(fm); self.fm_fwd.requires_jacfwd = True
+        self.fm_bwd = copy.copy(fm); self.fm_bwd.requires_jacfwd = False
 
-        self.model = jax.jit(model)
-        self._f_eps = lambda e: self.model(e, self.theta_fid)
-        self._f_th = lambda th: self.model(self.eps_fid, th)
-        self.jvp_eps = jax.jit(lambda v: jax.jvp(self._f_eps, (self.eps_fid,), (v,))[1])
+        def make_model(f):
+            def model(eps, theta):
+                out = f.linear_galaxy_field(eps, theta, layout, rsd) if linear else f(eps, theta, layout, rsd)
+                return jnp.concatenate([out[t].ravel()[self.idx[t]] for t in self.tracers])
+            return model
+        self.model = jax.jit(make_model(self.fm_bwd))
+        self.model_fwd = jax.jit(make_model(self.fm_fwd))
+        self._f_eps = lambda e: self.model(e, self.theta_fid)             # reverse-mode view
+        self._f_eps_fwd = lambda e: self.model_fwd(e, self.theta_fid)     # forward-mode view
+        self._f_th = lambda th: self.model_fwd(self.eps_fid, th)
+        self.jvp_eps = jax.jit(lambda v: jax.jvp(self._f_eps_fwd, (self.eps_fid,), (v,))[1])
         _, vjp_fn = jax.vjp(self._f_eps, self.eps_fid)
         self.vjp_eps = jax.jit(lambda w: vjp_fn(w)[0])
         self.matvec = jax.jit(lambda v: self.vjp_eps(self.invvar * self.jvp_eps(v)) + v)
@@ -105,18 +115,20 @@ class FieldFisher:
         import time as _t
         t0 = _t.time()
         n = self.layout.n
-        f_joint = lambda e, th: self.model(e, th)
+        f_fwd = lambda e, th: self.model_fwd(e, th)
+        f_bwd = lambda e, th: self.model(e, th)
         # J v and J^T w at (eps_fid, theta_fid)
         Jv = self.jvp_eps
         JTw = self.vjp_eps
-        # dJ_i v = d/dtheta_i (J_eps(theta) v): jvp over theta of the eps-jvp
+        # dJ_i v = d/dtheta_i (J_eps(theta) v): jvp over theta of the eps-jvp (forward-mode view)
         def dJ_v(v, i):
             e_i = jnp.zeros(n).at[i].set(1.0)
-            g = lambda th: jax.jvp(lambda e: f_joint(e, th), (self.eps_fid,), (v,))[1]
+            g = lambda th: jax.jvp(lambda e: f_fwd(e, th), (self.eps_fid,), (v,))[1]
             return jax.jvp(g, (self.theta_fid,), (e_i,))[1]
+        # dJ_i^T w = d/dtheta_i (J_eps(theta)^T w): jvp over theta of the eps-vjp (reverse-mode view)
         def dJT_w(w, i):
             e_i = jnp.zeros(n).at[i].set(1.0)
-            g = lambda th: jax.vjp(lambda e: f_joint(e, th), self.eps_fid)[1](w)[0]
+            g = lambda th: jax.vjp(lambda e: f_bwd(e, th), self.eps_fid)[1](w)[0]
             return jax.jvp(g, (self.theta_fid,), (e_i,))[1]
         dJ_v = jax.jit(dJ_v, static_argnums=1); dJT_w = jax.jit(dJT_w, static_argnums=1)
         var = 1.0 / self.invvar

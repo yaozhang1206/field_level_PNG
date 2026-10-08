@@ -10,7 +10,7 @@ from _common import plt, save_fig, write_note
 closed = json.load(open(ROOT / "results" / "fisher_closed.json"))["results"]
 pk = json.load(open(ROOT / "results" / "fisher_pk_full.json"))["results"]
 rows, summary = [], {}
-hdr = ["| run | tracers | n_real | sigma(f_NL) Schur: mean +- scatter | sigma from mean F | unmarg. f_NL | closed Tier1 (k_f / 0.003) | Tier1+2 |", "|---|---|---|---|---|---|---|---|"]
+hdr = [r"| run | tracers | $n_{\rm real}$ | $\sigma(f_{\rm NL})$ Schur: mean $\pm$ scatter | $\sigma$ from mean $F$ | unmarg. $f_{\rm NL}$ | closed Tier 1 ($k_f$ / 0.003) | Tier 1+2 |", "|---|---|---|---|---|---|---|---|"]
 for f in sorted(glob.glob(str(ROOT / "results" / "fisher_field_res*.json"))):
     d = json.load(open(f)); tag = d["tag"]; a = d["args"]
     for trset, m in d.get("mean", {}).items():
@@ -18,13 +18,13 @@ for f in sorted(glob.glob(str(ROOT / "results" / "fisher_field_res*.json"))):
         key = f"res{a['res']}_{trset}_{'bphi_sampled' if a['sample_bphi'] else 'bphi_fixed'}"
         c = closed.get(key, {})
         unm = np.mean([r["sigma_unmarg_fnl"] for r in recs])
-        rows.append(f"| {tag} | {trset} | {len(recs)} | {m['sigma_mean']:.2f} +- {m['sigma_std']:.2f} | {m['sigma_meanF']:.2f} | {unm:.2f} | "
+        rows.append(f"| {tag} | {trset} | {len(recs)} | {m['sigma_mean']:.2f} $\\pm$ {m['sigma_std']:.2f} | {m['sigma_meanF']:.2f} | {unm:.2f} | "
                     f"{c.get('sigma_tier1', float('nan')):.1f} / {c.get('sigma_tier1_kmin003', float('nan')):.1f} | {c.get('sigma_tier12', float('nan')):.1f} |")
         summary[f"{tag}:{trset}"] = dict(tag=tag, tracers=trset, res=a["res"], p_qso=a["p_qso"], sample_bphi=a["sample_bphi"],
                                          fnl_fid=a["fnl_fid"], n_real=len(recs), sigma_mean=m["sigma_mean"], sigma_std=m["sigma_std"],
                                          sigma_meanF=m["sigma_meanF"], sigma_unmarg=float(unm), closed=c)
 # exact-marginal (Hutchinson) runs
-rows += ["", "| exact-marginal run | tracers | n_real | sigma(f_NL) marginal (per realisation) | from mean F | Schur same runs | closed Tier1 exact (k_f / 0.003) |", "|---|---|---|---|---|---|---|"]
+rows += ["", r"| exact-marginal run | tracers | $n_{\rm real}$ | $\sigma(f_{\rm NL})$ marginal (per realisation) | from mean $F$ | Schur, same runs | closed Tier 1 exact ($k_f$ / 0.003) |", "|---|---|---|---|---|---|---|"]
 for f in sorted(glob.glob(str(ROOT / "results" / "fisher_field_marginal_*.json"))):
     d = json.load(open(f)); tag = d["tag"]; a = d["args"]
     for trset, m in d.get("mean", {}).items():
@@ -57,10 +57,10 @@ ax.set_title("Stage 1 Part B: field-level Fisher forecasts, DESI DR1")
 save_fig(fig, "fisher_field_summary")
 json.dump(summary, open(ROOT / "results" / "fisher_field.json", "w"), indent=1)
 note = ["Field-level Fisher forecasts (DISCO-DJ 2LPT + PNG + Lagrangian bias + RSD, DR1 footprint, Gaussian noise).",
-        "Two estimators: Schur complement of the joint (eps, theta) Fisher (profile curvature; biased by (P+N)/(2P) per mode, see",
-        "schur_dense16.md) and the exact Gaussian-marginal Fisher of the model linearised in eps (Hutchinson trace estimator).",
-        "Marginalised over per-shell (b1, b2, bK) [+ bphi, bphidelta with 40% prior when sampled]; fiducial f_NL = 0 (5 when bphi sampled).",
-        "Closed forms from fisher_closed.md (same shells/volumes). 'unmarg.' = 1/sqrt(F_ff) with all bias fixed.", ""] + hdr + rows + [
+        r"Two estimators: Schur complement of the joint $(\varepsilon,\theta)$ Fisher, $F_{\rm marg} = F_{\theta\theta} - F_{\theta\varepsilon}F_{\varepsilon\varepsilon}^{-1}F_{\varepsilon\theta}$ (profile curvature; biased by $(P+N)/(2P)$ per mode, see",
+        r"schur_dense16.md) and the exact Gaussian-marginal Fisher $F_{ij} = \tfrac12{\rm Tr}[C^{-1}\partial_iC\,C^{-1}\partial_jC]$ of the model linearised in $\varepsilon$ (Hutchinson trace estimator).",
+        r"Marginalised over per-shell $(b_1, b_2, b_K)$ [+ $b_\phi$, $b_{\phi\delta}$ with 40% prior when sampled]; fiducial $f_{\rm NL} = 0$ (5 when $b_\phi$ sampled).",
+        r"Closed forms from fisher_closed.md (same shells/volumes). 'unmarg.' = $1/\sqrt{F_{ff}}$ with all bias fixed.", ""] + hdr + rows + [
         "", "Realisation scatter reflects the few largest-scale modes that dominate the PNG signal; use the mean-F value.",
         "Figure: fisher_field_summary.png"]
 write_note("fisher_field", "Part B: field-level Fisher results (Schur) vs closed forms", note)

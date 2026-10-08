@@ -15,12 +15,14 @@ ap.add_argument("--res", type=int, default=80); ap.add_argument("--nreal", type=
 ap.add_argument("--probes", type=int, default=8); ap.add_argument("--linear", action="store_true")
 ap.add_argument("--p_qso", type=float, default=None); ap.add_argument("--tracers", default="QSO+LRG")
 ap.add_argument("--seed0", type=int, default=1000); ap.add_argument("--tag", default="")
+ap.add_argument("--sample_bphi", action="store_true"); ap.add_argument("--fnl_fid", type=float, default=0.0)
 a = ap.parse_args()
 L = 10000.0
 cosmo, geoms, shells, nz = build(p_qso=a.p_qso)
-lay = ParamLayout(shells)
+lay = ParamLayout(shells, sample_bphi=a.sample_bphi)
+prior = lay.prior(0.4)
 fm = ForwardModel(cosmo, shells, L=L, res=a.res, nz_funcs=nz, ang_mask=dr1_angular_mask(64))
-tag = a.tag or f"marginal_res{a.res}_p{a.p_qso or 1.6}{'_linear' if a.linear else ''}"
+tag = a.tag or f"marginal_res{a.res}_p{a.p_qso or 1.6}{'_linear' if a.linear else ''}{'_bphi_sampled_fnl%g' % a.fnl_fid if a.sample_bphi else ''}"
 out = dict(args=vars(a), tag=tag, names=lay.names, realisations=[], mean={})
 for trset in a.tracers.split(","):
     trs = [t for t in fm.tracers if t in trset]
@@ -28,7 +30,7 @@ for trset in a.tracers.split(","):
     for r in range(a.nreal):
         eps = jax.random.normal(jax.random.PRNGKey(a.seed0 + r), (a.res,) * 3, dtype=jnp.float64)
         t0 = time.time()
-        ff = FieldFisher(fm, lay, eps, lay.fiducial(), rsd=True, linear=a.linear, tracers=trs)
+        ff = FieldFisher(fm, lay, eps, lay.fiducial(a.fnl_fid), prior=prior, rsd=True, linear=a.linear, tracers=trs)
         Fs_ = ff.fisher(); Fschur.append(Fs_)
         Fm = ff.fisher_marginal(n_probes=a.probes, seed=r); Fs.append(Fm)
         rec = dict(tracers=trset, real=r, time=time.time() - t0, sigma_marginal=sigma_of(Fm), sigma_schur=sigma_of(Fs_),

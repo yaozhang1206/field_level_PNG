@@ -38,11 +38,14 @@ for t, n in (("LRG", 3.0e-4), ("QSO", 2.5e-5)):
     F_ex, F_lap = t1.fisher(laplace=False)[:2, :2], t1.fisher(laplace=True)[:2, :2]
     F_h = ff.fisher_marginal(n_probes=16)[:2, :2]                                # Hutchinson, same operators
     s = lambda F: float(np.sqrt(np.linalg.inv(F)[0, 0]))
-    lines.append(f"- {t} (n={n:.1e}): sigma(f_NL) [b1 marg.]: CG-Schur {s(F_cg[:2,:2]):.3f} | dense Schur {s(F_dense):.3f} | "
+    lines.append(f"- {t} ($\\bar n={n:.1e}$): $\\sigma(f_{{\\rm NL}})$ [$b_1$ marg.]: CG-Schur {s(F_cg[:2,:2]):.3f} | dense Schur {s(F_dense):.3f} | "
                  f"dense exact marginal {s(F_marg):.3f} | Hutchinson(16 probes) {s(F_h):.3f} | mode sum exact {s(F_ex):.3f} | mode sum Laplace-weighted {s(F_lap):.3f}")
-    lines.append(f"    F_ff: CG {F_cg[0,0]:.4f} dense {F_dense[0,0]:.4f} | marginal {F_marg[0,0]:.4f} Hutchinson {F_h[0,0]:.4f} exact-sum {F_ex[0,0]:.4f} | Laplace-sum {F_lap[0,0]:.4f}")
-lines += ["", "Conclusions: CG operator code == dense Schur; dense exact marginal == Tier 1 mode sum (validates both);",
-          "Schur == Laplace-weighted sum (within one-realisation scatter): the Schur/profile estimate is biased by (P+N)/(2P) per mode;",
+    lines.append(f"    $F_{{ff}}$: CG {F_cg[0,0]:.4f} dense {F_dense[0,0]:.4f} | marginal {F_marg[0,0]:.4f} Hutchinson {F_h[0,0]:.4f} exact-sum {F_ex[0,0]:.4f} | Laplace-sum {F_lap[0,0]:.4f}")
+lines = [r"Dense Schur: $F_{\rm marg} = F_{\theta\theta} - F_{\theta\varepsilon}F_{\varepsilon\varepsilon}^{-1}F_{\varepsilon\theta}$ with $F = J^TN^{-1}J + I$;",
+         r"exact marginal: $F_{ij} = \tfrac12{\rm Tr}[C^{-1}\partial_iC\,C^{-1}\partial_jC]$, $C = J_\varepsilon J_\varepsilon^T + N$;",
+         r"mode sums per independent mode: exact $\partial_iP\,\partial_jP/(P+N)^2$, Laplace-weighted $\partial_iP\,\partial_jP/(2P(P+N))$.", ""] + lines
+lines += ["", "Conclusions: CG operator code $=$ dense Schur; dense exact marginal $=$ Tier 1 mode sum (validates both);",
+          r"Schur $=$ Laplace-weighted sum (within one-realisation scatter): the Schur/profile estimate is biased by $(P+N)/(2P)$ per mode;",
           "Hutchinson reproduces the exact marginal within probe noise."]
-write_note("schur_dense16", "Dense 16^3 check: Schur (CG vs dense) vs exact marginal vs mode sums", lines + ["", "No figure (numerical table)."])
+write_note("schur_dense16", "Dense $16^3$ check: Schur (CG vs dense) vs exact marginal vs mode sums", lines + ["", "No figure (numerical table)."])
 print("\n".join(lines))

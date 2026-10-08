@@ -114,7 +114,7 @@ class ParamLayout:
 class ForwardModel:
     def __init__(self, cosmo: Cosmology, shells: list[Shell], L: float = 10000.0, res: int = 80,
                  nz_funcs: dict | None = None, ang_mask=None, mask_nside: int = 64, n_order: int = 2,
-                 worder: int = 2, precision: str = "double", observer=None):
+                 worder: int = 2, precision: str = "double", observer=None, requires_jacfwd: bool = False):
         """
         nz_funcs: {tracer: callable z -> observed density (h/Mpc)^3}
         ang_mask: HEALPix map (nside=mask_nside, RING) of fractional coverage in [0,1]
@@ -122,6 +122,7 @@ class ForwardModel:
         from discodj import DiscoDJ
         self.cosmo, self.shells, self.L, self.res = cosmo, shells, float(L), int(res)
         self.n_order, self.worder = n_order, worder
+        self.requires_jacfwd = requires_jacfwd   # DISCO-DJ scatter: custom_jvp (forward mode) vs custom_vjp (reverse)
         self.dtype = jnp.float64 if precision == "double" else jnp.float32
         cp = cosmo.p
         self.dj = DiscoDJ(dim=3, res=res, boxsize=L, precision=precision,
@@ -240,7 +241,7 @@ class ForwardModel:
         n = self.res ** 3
         return scatter(mesh, pos.reshape(n, 3), n_part_tot=n, res=self.res, boxsize=self.L,
                        dtype_num=64 if self.dtype == jnp.float64 else 32, weight=w.reshape(n, 1),
-                       worder=self.worder)
+                       worder=self.worder, requires_jacfwd=self.requires_jacfwd)
 
     def __call__(self, eps, theta, layout: ParamLayout, rsd=True):
         """Return {tracer: expected counts field (res^3)}."""

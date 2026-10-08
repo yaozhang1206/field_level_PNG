@@ -18,7 +18,8 @@ for i in range(len(shells)):
 fm.footprint = {t: np.ones((res,) * 3, bool) for t in fm.tracers}
 class _SG:
     def tables(self, s): return np.array([1.0]), np.array([L ** 3]), np.array([nbar[s.tracer]])
-lines, rows = [f"periodic box {res}^3, uniform nbar QSO {nbar['QSO']:.1e}, LRG {nbar['LRG']:.1e}, {probes} probes"], {}
+lines, rows = [f"periodic box ${res}^3$, uniform $\\bar n$: QSO {nbar['QSO']:.1e}, LRG {nbar['LRG']:.1e}, {probes} probes; "
+               r"Hutchinson: $F_{ij} \approx \tfrac12\langle (C^{-1}z)^T\partial_iC\,(C^{-1}\partial_jC\,z)\rangle_z$ with Rademacher $z$"], {}
 for tr in ("QSO", "LRG", "QSO+LRG"):
     sh = [s for s in shells if s.tracer in tr]; lay_t = ParamLayout(sh)
     t1 = Tier1(cosmo, sh, lay_t, _SG(), L=L, res=res, continuum=False)
@@ -36,7 +37,7 @@ for j, (k, lab, m) in enumerate([("exact", "exact mode sum", "k_"), ("marginal",
     ax.plot(x + 0.1 * j - 0.15, [rows[n][k] for n in names], m, label=lab, ms=7, mfc="none" if j else None)
 ax.set_xticks(x); ax.set_xticklabels(names); ax.set_ylabel(r"$\sigma(f_{NL})$"); ax.legend(fontsize=7); ax.set_title(f"Linear model, periodic box {res}^3")
 save_fig(fig, f"fisher_marginal_box_res{res}")
-lines += ["", "Expect: Hutchinson marginal == exact mode sum (within probe noise); Schur == Laplace-weighted mode sum."]
+lines += ["", "Expect: Hutchinson marginal $=$ exact mode sum (within probe noise); Schur $=$ Laplace-weighted mode sum."]
 write_note(f"fisher_marginal_box_res{res}", "Hutchinson Gaussian-marginal Fisher vs exact mode sum (periodic box)", lines)
 json.dump(rows, open(ROOT / "results" / f"fisher_marginal_box_res{res}.json", "w"), indent=1)
 print("\n".join(lines))
