@@ -25,6 +25,53 @@ from jax.scipy.sparse.linalg import cg  # noqa: E402
 from forward_model import ForwardModel, ParamLayout  # noqa: E402
 
 
+_OPS_CACHE = {}
+
+
+def _get_ops(fm, layout, tracers, linear, rsd, idx):
+    """Jitted operators compiled once per (model, layout, tracer set): all take (eps, theta[, invvar]) as
+    arguments so that new realisations / fiducials never trigger recompilation (compiled 2LPT+scatter
+    programs are large and accumulate in host memory otherwise)."""
+    key = (id(fm), id(layout), tuple(tracers), bool(linear), bool(rsd))
+    if key in _OPS_CACHE:
+        return _OPS_CACHE[key]
+    import copy
+    fm_fwd = copy.copy(fm); fm_fwd.requires_jacfwd = True
+    fm_bwd = copy.copy(fm); fm_bwd.requires_jacfwd = False
+
+    def make_model(f):
+        def model(eps, theta):
+            out = f.linear_galaxy_field(eps, theta, layout, rsd) if linear else f(eps, theta, layout, rsd)
+            return jnp.concatenate([out[t].ravel()[idx[t]] for t in tracers])
+        return model
+    m_fwd, m_bwd = make_model(fm_fwd), make_model(fm_bwd)
+    n = layout.n
+    ops = {}
+    ops["model"] = jax.jit(m_bwd)
+    ops["jvp"] = jax.jit(lambda eps, th, v: jax.jvp(lambda e: m_fwd(e, th), (eps,), (v,))[1])
+    ops["vjp"] = jax.jit(lambda eps, th, w: jax.vjp(lambda e: m_bwd(e, th), eps)[1](w)[0])
+    ops["jvp_theta"] = jax.jit(lambda eps, th, e_i: jax.jvp(lambda t: m_fwd(eps, t), (th,), (e_i,))[1])
+    # second-order: dJ_i v and dJ_i^T w along a theta direction e_i (array argument -> one program)
+    ops["dJ_v"] = jax.jit(lambda eps, th, v, e_i: jax.jvp(
+        lambda t: jax.jvp(lambda e: m_fwd(e, t), (eps,), (v,))[1], (th,), (e_i,))[1])
+    ops["dJT_w"] = jax.jit(lambda eps, th, w, e_i: jax.jvp(
+        lambda t: jax.vjp(lambda e: m_bwd(e, t), eps)[1](w)[0], (th,), (e_i,))[1])
+
+    def matvec_schur(eps, th, invvar, v):          # (J^T N^-1 J + I) v
+        return ops["vjp"](eps, th, invvar * ops["jvp"](eps, th, v)) + v
+    def matvec_C(eps, th, var, w):                 # (J J^T + N) w
+        return ops["jvp"](eps, th, ops["vjp"](eps, th, w)) + var * w
+    ops["solve_schur"] = jax.jit(lambda eps, th, invvar, b, tol, maxiter: cg(
+        lambda v: matvec_schur(eps, th, invvar, v), b, tol=tol, maxiter=maxiter)[0], static_argnums=5)
+    ops["solve_C"] = jax.jit(lambda eps, th, var, b, tol, maxiter: cg(
+        lambda w: matvec_C(eps, th, var, w), b, tol=tol, maxiter=maxiter)[0], static_argnums=5)
+    ops["matvec_schur"] = jax.jit(matvec_schur)
+    ops["dC"] = jax.jit(lambda eps, th, w, e_i: ops["dJ_v"](eps, th, ops["vjp"](eps, th, w), e_i)
+                        + ops["jvp"](eps, th, ops["dJT_w"](eps, th, w, e_i)))
+    _OPS_CACHE[key] = ops
+    return ops
+
+
 class FieldFisher:
     def __init__(self, fm: ForwardModel, layout: ParamLayout, eps_fid, theta_fid, prior=None, rsd=True,
                  linear=False, noise_floor=1e-3, verbose=True, tracers=None):
@@ -36,34 +83,16 @@ class FieldFisher:
         self.eps_fid = jnp.asarray(eps_fid, dtype=jnp.float64)
         self.theta_fid = jnp.asarray(theta_fid, dtype=jnp.float64)
         self.prior = np.zeros((layout.n, layout.n)) if prior is None else np.asarray(prior)
-        # noise: sigma^2 = unperturbed expected counts per voxel (sum of shells of that tracer)
         var = []
         for t in self.tracers:
             nb = sum(np.asarray(fm.nbar_cell[i]) for i, s in enumerate(fm.shells) if s.tracer == t).ravel()
             var.append(np.maximum(nb[np.asarray(self.idx[t])], noise_floor))
         self.invvar = jnp.asarray(1.0 / np.concatenate(var))
-
-        # DISCO-DJ's particle scatter has either a custom_jvp (forward mode) or a custom_vjp (reverse mode)
-        # rule, so keep two views of the model: fm_fwd for jvp (in eps or theta, nested), fm_bwd for vjp
-        # and jvp-over-vjp. Both evaluate the same function (adjoint check in test_schur_dense16 / CPU test).
-        import copy
-        self.fm_fwd = copy.copy(fm); self.fm_fwd.requires_jacfwd = True
-        self.fm_bwd = copy.copy(fm); self.fm_bwd.requires_jacfwd = False
-
-        def make_model(f):
-            def model(eps, theta):
-                out = f.linear_galaxy_field(eps, theta, layout, rsd) if linear else f(eps, theta, layout, rsd)
-                return jnp.concatenate([out[t].ravel()[self.idx[t]] for t in self.tracers])
-            return model
-        self.model = jax.jit(make_model(self.fm_bwd))
-        self.model_fwd = jax.jit(make_model(self.fm_fwd))
-        self._f_eps = lambda e: self.model(e, self.theta_fid)             # reverse-mode view
-        self._f_eps_fwd = lambda e: self.model_fwd(e, self.theta_fid)     # forward-mode view
-        self._f_th = lambda th: self.model_fwd(self.eps_fid, th)
-        self.jvp_eps = jax.jit(lambda v: jax.jvp(self._f_eps_fwd, (self.eps_fid,), (v,))[1])
-        _, vjp_fn = jax.vjp(self._f_eps, self.eps_fid)
-        self.vjp_eps = jax.jit(lambda w: vjp_fn(w)[0])
-        self.matvec = jax.jit(lambda v: self.vjp_eps(self.invvar * self.jvp_eps(v)) + v)
+        self.ops = _get_ops(fm, layout, self.tracers, linear, rsd, self.idx)
+        self.model = lambda eps, th: self.ops["model"](eps, th)
+        self.jvp_eps = lambda v: self.ops["jvp"](self.eps_fid, self.theta_fid, v)
+        self.vjp_eps = lambda w: self.ops["vjp"](self.eps_fid, self.theta_fid, w)
+        self.matvec = lambda v: self.ops["matvec_schur"](self.eps_fid, self.theta_fid, self.invvar, v)
 
     def log(self, *a):
         if self.verbose:
@@ -71,11 +100,8 @@ class FieldFisher:
 
     def jac_theta(self):
         """dM/dtheta on the footprint: (n_data, n_theta), by n_theta forward-mode JVPs."""
-        cols = []
         n = self.layout.n
-        for i in range(n):
-            e = jnp.zeros(n).at[i].set(1.0)
-            cols.append(jax.jvp(self._f_th, (self.theta_fid,), (e,))[1])
+        cols = [self.ops["jvp_theta"](self.eps_fid, self.theta_fid, jnp.zeros(n).at[i].set(1.0)) for i in range(n)]
         return jnp.stack(cols, axis=1)
 
     def fisher(self, tol=1e-6, maxiter=400):
@@ -84,20 +110,15 @@ class FieldFisher:
         self.log(f"  jac_theta done ({J.shape}) {time.time()-t0:.0f}s")
         F_tt = np.asarray(J.T @ (self.invvar[:, None] * J)) + self.prior
         n = self.layout.n
-        F_te = []
-        for i in range(n):
-            F_te.append(self.vjp_eps(self.invvar * J[:, i]))
-        F_te = jnp.stack(F_te)                                   # (n_theta, res^3)
+        F_te = jnp.stack([self.vjp_eps(self.invvar * J[:, i]) for i in range(n)])    # (n_theta, res^3)
         corr = np.zeros((n, n))
         self.iters = []
         for i in range(n):
             rhs = F_te[i]
-            v, info = cg(self.matvec, rhs, tol=tol, maxiter=maxiter)
-            r = rhs - self.matvec(v)
-            rel = float(jnp.linalg.norm(r) / jnp.linalg.norm(rhs))
+            v = self.ops["solve_schur"](self.eps_fid, self.theta_fid, self.invvar, rhs, tol, maxiter)
+            rel = float(jnp.linalg.norm(rhs - self.matvec(v)) / jnp.linalg.norm(rhs))
             self.iters.append(rel)
-            for j in range(n):
-                corr[i, j] = float(jnp.vdot(F_te[j], v))
+            corr[i, :] = np.asarray(jnp.tensordot(F_te, v, axes=v.ndim))
             self.log(f"  CG {i+1}/{n} ({self.layout.names[i]}): residual {rel:.1e}  {time.time()-t0:.0f}s")
         corr = 0.5 * (corr + corr.T)
         self.F_tt, self.F_marg = F_tt, F_tt - corr
@@ -112,30 +133,13 @@ class FieldFisher:
             F_ij ~ 1/2 <(C^-1 z)^T dC_i (C^-1 dC_j z)>_z.
         For a linear model this is the exact marginal (Gaussian-field) Fisher including the survey window;
         it differs from the Schur (profile) estimate by (P+N)/(2P) per mode."""
-        import time as _t
-        t0 = _t.time()
-        n = self.layout.n
-        f_fwd = lambda e, th: self.model_fwd(e, th)
-        f_bwd = lambda e, th: self.model(e, th)
-        # J v and J^T w at (eps_fid, theta_fid)
-        Jv = self.jvp_eps
-        JTw = self.vjp_eps
-        # dJ_i v = d/dtheta_i (J_eps(theta) v): jvp over theta of the eps-jvp (forward-mode view)
-        def dJ_v(v, i):
-            e_i = jnp.zeros(n).at[i].set(1.0)
-            g = lambda th: jax.jvp(lambda e: f_fwd(e, th), (self.eps_fid,), (v,))[1]
-            return jax.jvp(g, (self.theta_fid,), (e_i,))[1]
-        # dJ_i^T w = d/dtheta_i (J_eps(theta)^T w): jvp over theta of the eps-vjp (reverse-mode view)
-        def dJT_w(w, i):
-            e_i = jnp.zeros(n).at[i].set(1.0)
-            g = lambda th: jax.vjp(lambda e: f_bwd(e, th), self.eps_fid)[1](w)[0]
-            return jax.jvp(g, (self.theta_fid,), (e_i,))[1]
-        var = 1.0 / self.invvar
-        Cmv = jax.jit(lambda w: Jv(JTw(w)) + var * w)
-        # dC_i w = dJ_i (J^T w) + J (dJ_i^T w); one jitted program per parameter i
-        dC = jax.jit(lambda w, i: dJ_v(JTw(w), i) + Jv(dJT_w(w, i)), static_argnums=1)
-        solve = jax.jit(lambda b: cg(Cmv, b, tol=tol, maxiter=maxiter)[0])
         import resource
+        t0 = time.time()
+        n = self.layout.n
+        eps, th, var = self.eps_fid, self.theta_fid, 1.0 / self.invvar
+        E = [jnp.zeros(n).at[i].set(1.0) for i in range(n)]
+        dC = lambda w, i: self.ops["dC"](eps, th, w, E[i])
+        solve = lambda b: self.ops["solve_C"](eps, th, var, b, tol, maxiter)
         key = jax.random.PRNGKey(seed)
         Fs = list(Fs_prev) if Fs_prev else []
         F = sum(Fs) if Fs else np.zeros((n, n))
@@ -150,12 +154,11 @@ class FieldFisher:
             for j in range(n):
                 yj = solve(dC(z, j))                                  # C^-1 dC_j z
                 Fp[:, j] = 0.5 * np.asarray(W @ yj)
-                del yj
             del W, Cinv_z, z
             Fp = 0.5 * (Fp + Fp.T)
             Fs.append(Fp); F = F + Fp
             rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1e6
-            self.log(f"  probe {p_+1}/{n_probes}: sigma(f_NL) running = {sigma_of(F / len(Fs) + self.prior):.2f}  {_t.time()-t0:.0f}s  maxRSS {rss:.1f} GB")
+            self.log(f"  probe {p_+1}/{n_probes}: sigma(f_NL) running = {sigma_of(F / len(Fs) + self.prior):.2f}  {time.time()-t0:.0f}s  maxRSS {rss:.1f} GB")
             if probe_callback is not None:
                 probe_callback(Fs)
         self.F_marginal = F / len(Fs) + self.prior
