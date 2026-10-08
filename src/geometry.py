@@ -146,3 +146,26 @@ class Geometry:
         return dict(tracer=self.tracer, zmin=self.zmin, zmax=self.zmax, area_pix_deg2=self.area_deg2,
                     area_eff_deg2=self.area_eff_deg2, area_full_deg2=self.area_full_deg2, cbar=self.cbar, N_w=self.N_w, V_total=self.V_total(kind), V_eff=self.V_eff(P0, kind),
                     nbar_eff=self.nbar_eff(P0, kind), z_eff=self.z_eff(P0, kind), P0=P0)
+
+
+_DR1_MASK_CACHE = Path(__file__).resolve().parents[1] / "results" / "cache" / "dr1_angular_mask_nside{nside}.npy"
+
+
+def dr1_angular_mask(nside=64):
+    """Fractional angular coverage map (RING, nside) of the DR1 footprint from the QSO randoms:
+    coverage = min(1, N_ran(pix) / N_full) with N_full the 90th percentile of occupied pixels."""
+    import healpy as hp
+    f = Path(str(_DR1_MASK_CACHE).format(nside=nside))
+    if f.exists():
+        return np.load(f)
+    import fitsio
+    d = Path(os.environ.get("DESI_DR1_DIR", "/work/hdd/bdne/yzhang116/desi_dr1"))
+    cnt = np.zeros(hp.nside2npix(nside))
+    for c in ("NGC", "SGC"):
+        r = fitsio.read(d / f"QSO_{c}_0_clustering.ran.fits", columns=["RA", "DEC"])
+        cnt += np.bincount(hp.ang2pix(nside, r["RA"], r["DEC"], lonlat=True), minlength=cnt.size)
+    full = np.percentile(cnt[cnt > 0], 90)
+    cov = np.clip(cnt / full, 0, 1)
+    f.parent.mkdir(parents=True, exist_ok=True)
+    np.save(f, cov)
+    return cov
