@@ -35,10 +35,16 @@ for trset in a.tracers.split(","):
         t0 = time.time()
         key = f"{trset}:{r}"
         done = [rr for rr in out["realisations"] if rr["tracers"] == trset and rr["real"] == r]
-        if done:
-            Fs.append(np.array(done[0]["F_marginal"])); Fschur.append(np.array(done[0]["F_schur"])); continue
-        ff = FieldFisher(fm, lay, eps, lay.fiducial(a.fnl_fid), prior=prior, rsd=True, linear=a.linear, tracers=trs)
         part = out["partial"].get(key, {})
+        if done:
+            prev = done[0].get("F_probes") or part.get("probes", [])
+            if len(prev) >= a.probes:
+                Fs.append(np.array(done[0]["F_marginal"])); Fschur.append(np.array(done[0]["F_schur"])); continue
+            # extend an existing realisation to more probes
+            part = dict(part, F_schur=done[0]["F_schur"], probes=prev); out["partial"][key] = part
+            out["realisations"] = [rr for rr in out["realisations"] if not (rr["tracers"] == trset and rr["real"] == r)]
+            print(f"[{tag}] {trset} real {r}: extending from {len(prev)} to {a.probes} probes", flush=True)
+        ff = FieldFisher(fm, lay, eps, lay.fiducial(a.fnl_fid), prior=prior, rsd=True, linear=a.linear, tracers=trs)
         if "F_schur" in part:
             Fs_ = np.array(part["F_schur"]); ff.F_marg = Fs_; ff.iters = [0.0]
         else:

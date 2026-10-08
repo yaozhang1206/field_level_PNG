@@ -30,7 +30,19 @@ for f in sorted(glob.glob(str(ROOT / "results" / "fisher_field_marginal_*.json")
     for trset, m in d.get("mean", {}).items():
         key = f"res{a['res']}_{trset}_bphi_fixed"; c = closed.get(key, {})
         recs = [r for r in d["realisations"] if r["tracers"] == trset]
-        errs = ", ".join(f"{r['sigma_marginal']:.2f} $\\pm$ {r.get('sigma_err', float('nan')):.2f} ({r.get('n_probes', '?')} probes)" for r in recs)
+        def jk_err(r):
+            """jackknife error of sigma(f_NL) over Hutchinson probes (from the mean Fisher)."""
+            P = np.array(r.get("F_probes", [])); n_p = len(P)
+            if n_p < 3:
+                return float("nan")
+            prior = np.array(r["F_marginal"]) - P.mean(0)
+            keep = np.where(np.diag(np.array(r["F_marginal"])) > 0)[0]
+            def sig(F):
+                return float(np.sqrt(np.linalg.inv(F[np.ix_(keep, keep)])[0, 0]))
+            s_all = sig(np.array(r["F_marginal"]))
+            s_jk = np.array([sig((P.sum(0) - P[i]) / (n_p - 1) + prior) for i in range(n_p)])
+            return float(np.sqrt((n_p - 1) / n_p * np.sum((s_jk - s_jk.mean()) ** 2)))
+        errs = ", ".join(f"{r['sigma_marginal']:.2f} $\\pm$ {jk_err(r):.2f} ({len(r.get('F_probes', []))} probes)" for r in recs)
         rows.append(f"| {tag} | {trset} | {len(m['sigma_marginal_list'])} | {errs} | {m['sigma_marginal_meanF']:.2f} | "
                     f"{', '.join(f'{x:.2f}' for x in m['sigma_schur_list'])} | {c.get('sigma_tier1', float('nan')):.1f} / {c.get('sigma_tier1_kmin003', float('nan')):.1f} |")
         summary[f"{tag}:{trset}"] = dict(tag=tag, tracers=trset, res=a["res"], p_qso=a["p_qso"], linear=a.get("linear", False),

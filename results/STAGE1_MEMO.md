@@ -13,7 +13,7 @@ Date: 2026-10-08. Code: this repository (commit TBD). Environment: Delta AI, con
   configuration of the brief) with $f_{\rm NL}$ + $(b_1, b_2, b_K)$ per shell marginalised: $\sigma(f_{\rm NL}) = 5.0$ (QSO+LRG) when all box
   modes down to $k_f = 6\times10^{-4}$ are counted, 7.4 with $k_{\min} = 0.003$. The tree-level bispectrum adds < 3 %.
   The exact Gaussian-marginal Fisher of the DISCO-DJ 2LPT forward model with the real DR1 window gives
-  **$\sigma(f_{\rm NL}) = $ SCHUR_RESULT** ($160^3$, QSO+LRG, $b_\phi$ fixed; see §4).
+  **$\sigma(f_{\rm NL}) = 5.7$ at $80^3$ ($k_{\max}=0.05$) and RES160_MARGINAL at $160^3$ ($k_{\max}=0.1$)** (QSO+LRG, $b_\phi$ fixed; see §4).
 - **Decision:** GO_NOGO_TEXT
 
 ## 2. Conventions carried into Stage 2
@@ -65,13 +65,20 @@ regime), so the closed form depends strongly on $k_{\min}$: the $k_f$ value coun
 $\approx 5$ Gpc/$h$ survey cannot constrain, the 0.003 value is conservative. The tree-level (real-space) bispectrum adds
 < 3 % at $k \le 0.05$.
 
-### 4.2 Schur-complement field-level Fisher (`test/notes/fisher_field.md`)
+### 4.2 Field-level Fisher with the DISCO-DJ 2LPT forward model (`test/notes/fisher_field.md`)
 
-SCHUR_TABLE
+Both estimators, DR1 window, 6 shells, $(b_1,b_2,b_K)$ per shell marginalised, $b_\phi$ fixed (UMF), fiducial $f_{\rm NL}=0$:
 
-Validation: see §4.3 (dense 16³ check) and `test/notes/fisher_field_linear_check_res80*.md` (80³, linear model, periodic box
-and DR1 window). With the DR1 window the field-level results exceed the k_min = k_f mode sum because the window removes the
-largest modes; they should be compared with the $k_{\min} \approx 0.003$ closed form.
+| grid | tracers | exact Gaussian-marginal (Hutchinson) | Schur / profile (mean of 4 realisations) | closed Tier 1 ($k_{\min}=k_f$ / 0.003) |
+|---|---|---|---|---|
+| $80^3$ ($k_{\rm Ny}=0.025$) | QSO+LRG | **5.67** (5.40 ± 0.31, 6.00 ± 0.34; two realisations) | 3.9 ± 0.4 | 5.4 / 8.9 |
+| $80^3$ | QSO | 8.99 ± 0.12 | 4.7 ± 0.6 | 8.4 / 11.5 |
+| $80^3$ | LRG | 9.42 ± 0.41 | 7.3 ± 0.8 | 7.1 / 14.1 |
+| $80^3$, QSO $p=1.0$ | QSO+LRG | 4.36 ± 0.23 | 2.5 | 5.4 / 8.9 |
+| $160^3$ ($k_{\rm Ny}=0.05$) | QSO+LRG | RES160_MARGINAL | RES160_SCHUR | 5.0 / 7.4 |
+
+(± = jackknife over Hutchinson probes; the two $80^3$ realisations differ by 10 %.) Cost on one GH200: 35 s per probe
+and 8 s per Schur solve at $80^3$ after compilation; memory 6 GB.
 
 ### 4.3 Schur (profile) vs exact marginal: validation at 16³ (`test/notes/schur_dense16.md`)
 
