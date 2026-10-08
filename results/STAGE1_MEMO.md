@@ -13,8 +13,16 @@ Date: 2026-10-08. Code: this repository (commit TBD). Environment: Delta AI, con
   configuration of the brief) with $f_{\rm NL}$ + $(b_1, b_2, b_K)$ per shell marginalised: $\sigma(f_{\rm NL}) = 5.0$ (QSO+LRG) when all box
   modes down to $k_f = 6\times10^{-4}$ are counted, 7.4 with $k_{\min} = 0.003$. The tree-level bispectrum adds < 3 %.
   The exact Gaussian-marginal Fisher of the DISCO-DJ 2LPT forward model with the real DR1 window gives
-  **$\sigma(f_{\rm NL}) = 5.7$ at $80^3$ ($k_{\max}=0.05$) and RES160_MARGINAL at $160^3$ ($k_{\max}=0.1$)** (QSO+LRG, $b_\phi$ fixed; see §4).
-- **Decision:** GO_NOGO_TEXT
+  **$\sigma(f_{\rm NL}) = 5.7$ at $80^3$ ($k_{\max}=0.05$) and $4.0 \pm 0.2$ at $160^3$ ($k_{\max}=0.1$)** (QSO+LRG, $b_\phi$ fixed; see §4).
+- **Decision: GO (marginal).** The exact Gaussian-marginal forecast at $160^3$ is $\sigma(f_{\rm NL}) = 4.0 \pm 0.2$ with
+  $b_\phi$ fixed and $\approx 4.9$ after propagating a 40 % prior on $b_\phi$ ($\times1.22$), i.e. at the $\lesssim 5$ threshold and a
+  factor $\approx 2$ below the DESI DR1 $P(k)$ result (9.2). Caveats that Stage 2 must settle: (i) the forecast rests on the model
+  linearised in $\varepsilon$; the strictly linear model with the same window gives 8.3 at $80^3$, so 60 % of the Fisher
+  information at $80^3$ (and more at $160^3$) comes from the quadratic couplings ($b_{\phi\delta}\,\delta\phi$, $f_{\rm NL}\phi^2$,
+  2LPT) entering through the $f_{\rm NL}$-dependence of the covariance, which a Fisher matrix can over-credit; (ii) the
+  largest-scale modes dominate, so results depend on the window and on the fiducial realisation at the 10 % level;
+  (iii) no systematics. If the Stage-2 MCMC recovers only the two-point information, expect $\sigma \approx 7$–8 and
+  the reframing branch of the brief applies.
 
 ## 2. Conventions carried into Stage 2
 
@@ -75,10 +83,20 @@ Both estimators, DR1 window, 6 shells, $(b_1,b_2,b_K)$ per shell marginalised, $
 | $80^3$ | QSO | 8.99 ± 0.12 | 4.7 ± 0.6 | 8.4 / 11.5 |
 | $80^3$ | LRG | 9.42 ± 0.41 | 7.3 ± 0.8 | 7.1 / 14.1 |
 | $80^3$, QSO $p=1.0$ | QSO+LRG | 4.36 ± 0.23 | 2.5 | 5.4 / 8.9 |
-| $160^3$ ($k_{\rm Ny}=0.05$) | QSO+LRG | RES160_MARGINAL | RES160_SCHUR | 5.0 / 7.4 |
+| $160^3$ ($k_{\rm Ny}=0.05$) | QSO+LRG | **4.00 ± 0.18** (12 probes, 1 realisation) | 2.8 (1 realisation) | 5.0 / 7.4 |
+| $80^3$, strictly linear model, DR1 window | QSO+LRG | 8.28 ± 0.21 | 3.4 | 5.4 / 8.9 |
 
-(± = jackknife over Hutchinson probes; the two $80^3$ realisations differ by 10 %.) Cost on one GH200: 35 s per probe
-and 8 s per Schur solve at $80^3$ after compilation; memory 6 GB.
+(± = jackknife over Hutchinson probes; the two $80^3$ realisations differ by 10 %.) The $80^3$ single-tracer and $p=1.0$
+runs used an unpreconditioned CG for $C^{-1}$; a re-run of the QSO+LRG case with the noise-preconditioned solver gave
+5.32 ± 0.65 vs 5.40, so they stand. The $160^3$ run uses the preconditioned solver (CG residuals $\le 10^{-5}$); an
+earlier unpreconditioned $160^3$ attempt gave 2.6 and was discarded. Cost on one GH200 after compilation: 10 s (80³)
+/ 100 s (160³) per probe, 8 s per Schur solve at 80³; memory 6 / 17 GB.
+
+**Linearisation budget.** Same realisation, same window, 80³: strictly linear model 8.28 → linearised 2LPT model 5.32
+→ 160³ linearised 2LPT 4.00. The gain from 8.3 to 5.3 is the information the quadratic terms contribute through
+$\partial C/\partial f_{\rm NL}$; the tree-level real-space bispectrum (Tier 2, $\Delta k = 0.002$) accounts for < 3 % of it,
+so Tier 2 as implemented under-resolves the squeezed configurations ($k_L \sim 10^{-3}$, where $1/T \propto k^{-2}$).
+
 
 ### 4.3 Schur (profile) vs exact marginal: validation at 16³ (`test/notes/schur_dense16.md`)
 

@@ -14,8 +14,11 @@ Closed forms from fisher_closed.md (same shells/volumes). 'unmarg.' = $1/\sqrt{F
 
 | exact-marginal run | tracers | $n_{\rm real}$ | $\sigma(f_{\rm NL})$ marginal (per realisation) | from mean $F$ | Schur, same runs | closed Tier 1 exact ($k_f$ / 0.003) |
 |---|---|---|---|---|---|---|
+| marginal_res160_p1.6 | QSO+LRG | 1 | 4.00 $\pm$ 0.18 (12 probes) | 4.00 | 2.83 | 5.0 / 7.4 |
 | marginal_res80_p1.0 | QSO+LRG | 1 | 4.36 $\pm$ 0.23 (16 probes) | 4.36 | 2.47 | 5.4 / 8.9 |
 | marginal_res80_p1.6 | QSO+LRG | 2 | 5.40 $\pm$ 0.31 (24 probes), 6.00 $\pm$ 0.34 (12 probes) | 5.67 | 3.18, 4.05 | 5.4 / 8.9 |
+| marginal_res80_p1.6_linear | QSO+LRG | 1 | 8.28 $\pm$ 0.21 (24 probes) | 8.28 | 3.44 | 5.4 / 8.9 |
+| marginal_res80_p1.6_recheck | QSO+LRG | 1 | 5.32 $\pm$ 0.65 (8 probes) | 5.32 | 3.18 | 5.4 / 8.9 |
 | marginal_res80_p1.6_single | QSO | 1 | 8.99 $\pm$ 0.12 (24 probes) | 8.99 | 3.77 | 8.4 / 11.5 |
 | marginal_res80_p1.6_single | LRG | 1 | 9.42 $\pm$ 0.41 (24 probes) | 9.42 | 6.20 | 7.1 / 14.1 |
 
