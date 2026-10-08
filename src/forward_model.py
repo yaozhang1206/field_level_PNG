@@ -267,8 +267,9 @@ class ForwardModel:
         out = {t: jnp.zeros((self.res,) * 3, dtype=self.dtype) for t in self.tracers}
         for i, s in enumerate(self.shells):
             _, b1, b2, bK, bphi, bphid = layout.unpack(theta, i)
-            kern = b1 + bphi * f_NL * self.invT_mesh + (self.f[i] * mu2 if rsd else 0.0)
-            dg = jnp.fft.irfftn(kern * fdelta * self.D[i], s=(self.res,) * 3)
+            # (b1 + f mu^2) D delta_L0 + bphi f_NL phi_g, with phi_g = delta_L0 / T(k, z=0) (no growth factor)
+            kern = (b1 + (self.f[i] * mu2 if rsd else 0.0)) * self.D[i] + bphi * f_NL * self.invT_mesh
+            dg = jnp.fft.irfftn(kern * fdelta, s=(self.res,) * 3)
             out[s.tracer] = out[s.tracer] + self.nbar_cell[i] * (1.0 + dg)
         return out
 

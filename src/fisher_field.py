@@ -93,6 +93,58 @@ class FieldFisher:
         self.F_tt, self.F_marg = F_tt, F_tt - corr
         return self.F_marg
 
+    # ------------------------------------------------------------------------------------------
+    # Exact Gaussian-marginal Fisher of the model linearised in eps (Hutchinson trace estimator)
+    # ------------------------------------------------------------------------------------------
+    def fisher_marginal(self, n_probes=8, tol=1e-6, maxiter=400, seed=0):
+        """F_ij = 1/2 Tr[C^-1 dC_i C^-1 dC_j] with C = J_e J_e^T + N (data space), dC_i = dJ_i J^T + J dJ_i^T,
+        dJ_i v = d/dtheta_i [J_e(theta) v] (second-order autodiff). Estimated with Rademacher probes z:
+            F_ij ~ 1/2 <(C^-1 z)^T dC_i (C^-1 dC_j z)>_z.
+        For a linear model this is the exact marginal (Gaussian-field) Fisher including the survey window;
+        it differs from the Schur (profile) estimate by (P+N)/(2P) per mode."""
+        import time as _t
+        t0 = _t.time()
+        n = self.layout.n
+        f_joint = lambda e, th: self.model(e, th)
+        # J v and J^T w at (eps_fid, theta_fid)
+        Jv = self.jvp_eps
+        JTw = self.vjp_eps
+        # dJ_i v = d/dtheta_i (J_eps(theta) v): jvp over theta of the eps-jvp
+        def dJ_v(v, i):
+            e_i = jnp.zeros(n).at[i].set(1.0)
+            g = lambda th: jax.jvp(lambda e: f_joint(e, th), (self.eps_fid,), (v,))[1]
+            return jax.jvp(g, (self.theta_fid,), (e_i,))[1]
+        def dJT_w(w, i):
+            e_i = jnp.zeros(n).at[i].set(1.0)
+            g = lambda th: jax.vjp(lambda e: f_joint(e, th), self.eps_fid)[1](w)[0]
+            return jax.jvp(g, (self.theta_fid,), (e_i,))[1]
+        dJ_v = jax.jit(dJ_v, static_argnums=1); dJT_w = jax.jit(dJT_w, static_argnums=1)
+        var = 1.0 / self.invvar
+        Cmv = jax.jit(lambda w: Jv(JTw(w)) + var * w)
+        def dC(w, i):                                   # dC_i w = dJ_i (J^T w) + J (dJ_i^T w)
+            return dJ_v(JTw(w), i) + Jv(dJT_w(w, i))
+        key = jax.random.PRNGKey(seed)
+        F = np.zeros((n, n)); Fs = []
+        for p_ in range(n_probes):
+            key, sub = jax.random.split(key)
+            z = jax.random.rademacher(sub, (self.n_data,), dtype=jnp.float64)
+            Cinv_z, _ = cg(Cmv, z, tol=tol, maxiter=maxiter)
+            y = []
+            for j in range(n):
+                yj, _ = cg(Cmv, dC(z, j), tol=tol, maxiter=maxiter)
+                y.append(yj)
+            Fp = np.zeros((n, n))
+            for i in range(n):
+                w_i = dC(Cinv_z, i)                       # dC_i C^-1 z  (dC_i symmetric)
+                for j in range(n):
+                    Fp[i, j] = 0.5 * float(jnp.vdot(w_i, y[j]))
+            Fp = 0.5 * (Fp + Fp.T)
+            Fs.append(Fp); F += Fp
+            self.log(f"  probe {p_+1}/{n_probes}: sigma(f_NL) running = {sigma_of(F / (p_+1) + self.prior):.2f}  {_t.time()-t0:.0f}s")
+        self.F_marginal = F / n_probes + self.prior
+        self.F_marginal_probe_std = np.std([sigma_of(Fp + self.prior) if Fp[0, 0] > 0 else np.nan for Fp in Fs])
+        return self.F_marginal
+
     def sigma(self, idx=0, F=None):
         F = self.F_marg if F is None else F
         keep = np.where(np.diag(F) > 0)[0]
