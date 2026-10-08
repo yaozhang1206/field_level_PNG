@@ -29,7 +29,9 @@ for f in sorted(glob.glob(str(ROOT / "results" / "fisher_field_marginal_*.json")
     d = json.load(open(f)); tag = d["tag"]; a = d["args"]
     for trset, m in d.get("mean", {}).items():
         key = f"res{a['res']}_{trset}_bphi_fixed"; c = closed.get(key, {})
-        rows.append(f"| {tag} | {trset} | {len(m['sigma_marginal_list'])} | {', '.join(f'{x:.2f}' for x in m['sigma_marginal_list'])} | {m['sigma_marginal_meanF']:.2f} | "
+        recs = [r for r in d["realisations"] if r["tracers"] == trset]
+        errs = ", ".join(f"{r['sigma_marginal']:.2f} $\\pm$ {r.get('sigma_err', float('nan')):.2f} ({r.get('n_probes', '?')} probes)" for r in recs)
+        rows.append(f"| {tag} | {trset} | {len(m['sigma_marginal_list'])} | {errs} | {m['sigma_marginal_meanF']:.2f} | "
                     f"{', '.join(f'{x:.2f}' for x in m['sigma_schur_list'])} | {c.get('sigma_tier1', float('nan')):.1f} / {c.get('sigma_tier1_kmin003', float('nan')):.1f} |")
         summary[f"{tag}:{trset}"] = dict(tag=tag, tracers=trset, res=a["res"], p_qso=a["p_qso"], linear=a.get("linear", False),
                                          sigma_marginal=m["sigma_marginal_list"], sigma_marginal_meanF=m["sigma_marginal_meanF"],

@@ -94,6 +94,65 @@ reported for reference only.
 At fiducial $f_{\rm NL} = 0$ any Fisher matrix is blind to the $b_\phi$ prior ($b_\phi$ enters only as $b_\phi f_{\rm NL}$); propagating
 $f_{\rm NL} = A/b_\phi$ with a 40 % Gaussian prior on $b_\phi$ inflates $\sigma$ by $\approx \sqrt{1 + 3\cdot0.4^2} = 1.22$.
 
+### 4.4 The three field-level Fisher estimators: what each one is
+
+All three start from the same forward model $d = M(\varepsilon,\theta) + n$ with $\varepsilon\sim\mathcal N(0,I)$
+(white-noise field) and $n\sim\mathcal N(0,N)$, $N = {\rm diag}(\sigma^2)$, and from the Jacobians at the
+fiducial point $J_\varepsilon = \partial M/\partial\varepsilon$, $J_\theta = \partial M/\partial\theta$.
+
+**(a) Joint Fisher and its Schur complement (the brief's method).** The Fisher matrix of the *joint*
+posterior $p(\varepsilon,\theta\,|\,d)$ is
+$$F = \begin{pmatrix} F_{\theta\theta} & F_{\theta\varepsilon} \\ F_{\varepsilon\theta} & F_{\varepsilon\varepsilon}\end{pmatrix},\qquad
+F_{\theta\theta} = J_\theta^T N^{-1} J_\theta + P_\theta,\quad
+F_{\theta\varepsilon} = J_\theta^T N^{-1} J_\varepsilon,\quad
+F_{\varepsilon\varepsilon} = J_\varepsilon^T N^{-1} J_\varepsilon + I .$$
+$F_{\theta\theta}$ alone is the curvature with the field held fixed at $\varepsilon_{\rm fid}$ ("unmarginalised":
+bias and initial conditions known); it ignores the degeneracy between $\theta$ and $\varepsilon$ and is far too
+optimistic. The Schur complement
+$$F_{\rm marg} = F_{\theta\theta} - F_{\theta\varepsilon}F_{\varepsilon\varepsilon}^{-1}F_{\varepsilon\theta},
+\qquad (F^{-1})_{\theta\theta} = F_{\rm marg}^{-1},$$
+removes that degeneracy. It is the exact marginalisation *of a Gaussian* in $(\varepsilon,\theta)$, and it is
+computed without approximation (CG operators agree with the dense $16^3$ matrix to all digits). But the joint
+posterior is not Gaussian, because $\theta$ multiplies $\varepsilon$ in the model: the Schur complement equals the
+curvature of the *profile* likelihood $\max_\varepsilon \ln[p(d|\varepsilon,\theta)p(\varepsilon)]$, which omits the
+$\theta$-dependent volume term $\tfrac12\ln\det F_{\varepsilon\varepsilon}(\theta)$ of the true marginal. Per Gaussian
+mode with signal $P$ and noise $N$,
+$$F^{\rm Schur}_{ij} = \frac{\partial_iP\,\partial_jP}{2P(P+N)}\quad\text{versus}\quad
+F^{\rm exact}_{ij} = \frac{\partial_iP\,\partial_jP}{(P+N)^2},$$
+a ratio $(P+N)/(2P)$: too pessimistic ($\times\sqrt2$ in $\sigma$) for $\bar nP\gg1$ (LRG) and too optimistic for
+$\bar nP\ll1$ (QSO, $\sigma$ under-estimated by $1.8\times$ at $16^3$). It also scatters strongly between
+$\varepsilon$ realisations because the few largest modes dominate the $f_{\rm NL}$ information. It is reported for
+reference only.
+
+**(b) Exact Gaussian-marginal Fisher of the linearised model.** Linearising $M \approx M_0 + J_\varepsilon\varepsilon$
+and integrating $\varepsilon$ out analytically makes the data Gaussian with covariance
+$C(\theta) = J_\varepsilon J_\varepsilon^T + N$, whose Fisher matrix is
+$$F_{ij} = \tfrac12\,{\rm Tr}\!\left[C^{-1}\partial_iC\,C^{-1}\partial_jC\right],\qquad
+\partial_iC = (\partial_iJ_\varepsilon)J_\varepsilon^T + J_\varepsilon(\partial_iJ_\varepsilon)^T .$$
+This is the true information of the marginal posterior $p(\theta|d)$ for a linear model (no profile shortcut, no
+missing volume term); in a periodic box it reduces mode by mode to the Tier 1 sum $\partial_iP\,\partial_jP/(P+N)^2$,
+and with the DR1 window the mask and $n(z)$ enter through $J_\varepsilon$ and $N$. Its only approximation for the
+2LPT model is the linearisation in $\varepsilon$ about the fiducial field, which keeps the $\theta$-dependence of all
+couplings but drops the non-Gaussian response of the field itself. It depends on $\varepsilon_{\rm fid}$ only through
+that linearisation point, so one or two realisations suffice.
+
+Two evaluations of (b) are used:
+- *Dense marginal* ($16^3$ only): $J_\varepsilon$ is built explicitly as a $4096\times4096$ matrix, $C$ is inverted,
+  $\partial_iJ_\varepsilon$ comes from a second forward-mode pass over $\theta$, and the trace is computed directly.
+  Ground truth, exact to floating point.
+- *Hutchinson marginal* ($80^3$, $160^3$): $C$ is never formed; the trace is estimated with Rademacher probes $z$,
+  $$F_{ij} \approx \tfrac12\big\langle (C^{-1}z)^T\,\partial_iC\,(C^{-1}\partial_jC\,z)\big\rangle_z ,$$
+  with $C^{-1}$ by conjugate gradient and $\partial_iC$ applied through nested forward/reverse-mode operators.
+  Cost $\approx (n_\theta+1)\times n_{\rm probes}$ CG solves. At $16^3$ with 16 probes it reproduces the dense
+  value to $<1\%$ (0.617 vs 0.614 for LRG, 26.66 vs 26.73 for QSO).
+
+**(c) Closed forms (Tier 1, Tier 2).** Analytic mode sums over the grid with the same shells, volumes and
+$n(z)$ but no survey window; Tier 1 is (b) in the linear, window-free limit and Tier 2 adds the tree-level
+bispectrum. They bracket the window effect and validate the operator code.
+
+**Which number is the forecast.** The Hutchinson marginal (b) with the DR1 window. The Schur values (a) are listed
+for comparison with the brief, and the closed forms (c) for the dependence on $k_{\min}$.
+
 ## 5. Where the signal is
 
 Per-mode information density peaks at $k \approx 0.003$–$0.01\,h/{\rm Mpc}$ for both tracers (`fisher_pk_info_density_full.png`),

@@ -50,8 +50,10 @@ for trset in a.tracers.split(","):
             out["partial"][key]["probes"] = [x.tolist() for x in Fs_list]
             json.dump(out, open(outfile, "w"), indent=1)
         Fm = ff.fisher_marginal(n_probes=a.probes, seed=r, probe_callback=cb, start_probe=len(Fs_prev), Fs_prev=Fs_prev); Fs.append(Fm)
+        nprobe = len(ff.F_marginal_probes)
         rec = dict(tracers=trset, real=r, time=time.time() - t0, sigma_marginal=sigma_of(Fm), sigma_schur=sigma_of(Fs_),
-                   probe_std=float(ff.F_marginal_probe_std), F_marginal=Fm.tolist(), F_schur=Fs_.tolist())
+                   probe_std=float(ff.F_marginal_probe_std), n_probes=nprobe, sigma_err=float(ff.F_marginal_probe_std / np.sqrt(nprobe)),
+                   F_marginal=Fm.tolist(), F_schur=Fs_.tolist(), F_probes=[x.tolist() for x in ff.F_marginal_probes])
         out["realisations"].append(rec)
         print(f"[{tag}] {trset} real {r}: {rec['time']:.0f}s  sigma marginal {rec['sigma_marginal']:.2f} (probe std {rec['probe_std']:.2f})  schur {rec['sigma_schur']:.2f}", flush=True)
         json.dump(out, open(outfile, "w"), indent=1)
