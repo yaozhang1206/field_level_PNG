@@ -1,0 +1,19 @@
+# Installed into conda env `pm` on Delta AI (aarch64). Core:
+jax==0.6.2
+jaxlib==0.6.2
+jax-cuda12-plugin==0.6.2
+jax-cuda12-pjrt==0.6.2
+discodj==0.0.2            # from github.com/cosmo-sims/DISCO-DJ
+discoeb                   # pip install --no-deps git+https://github.com/cosmo-sims/DISCO-EB.git
+diffrax
+equinox
+numpy
+scipy
+matplotlib
+h5py
+pyyaml
+# Stage 1 extras:
+classy                    # CLASS cross-check of DISCO-EB
+astropy
+fitsio
+healpy
