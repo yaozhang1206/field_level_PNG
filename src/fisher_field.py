@@ -61,10 +61,18 @@ def _get_ops(fm, layout, tracers, linear, rsd, idx):
         return ops["vjp"](eps, th, invvar * ops["jvp"](eps, th, v)) + v
     def matvec_C(eps, th, var, w):                 # (J J^T + N) w
         return ops["jvp"](eps, th, ops["vjp"](eps, th, w)) + var * w
+    # Noise-preconditioned C solve: C^-1 b = N^-1/2 (N^-1/2 J J^T N^-1/2 + I)^-1 N^-1/2 b ; eigenvalues 1 + nP
+    def matvec_Ct(eps, th, sqinv, y):
+        return sqinv * ops["jvp"](eps, th, ops["vjp"](eps, th, sqinv * y)) + y
     ops["solve_schur"] = jax.jit(lambda eps, th, invvar, b, tol, maxiter: cg(
         lambda v: matvec_schur(eps, th, invvar, v), b, tol=tol, maxiter=maxiter)[0], static_argnums=5)
-    ops["solve_C"] = jax.jit(lambda eps, th, var, b, tol, maxiter: cg(
-        lambda w: matvec_C(eps, th, var, w), b, tol=tol, maxiter=maxiter)[0], static_argnums=5)
+    def solve_C(eps, th, var, b, tol, maxiter):
+        sqinv = 1.0 / jnp.sqrt(var)
+        y, _ = cg(lambda y_: matvec_Ct(eps, th, sqinv, y_), sqinv * b, tol=tol, maxiter=maxiter)
+        x = sqinv * y
+        res = jnp.linalg.norm(matvec_C(eps, th, var, x) - b) / jnp.linalg.norm(b)
+        return x, res
+    ops["solve_C"] = jax.jit(solve_C, static_argnums=5)
     ops["matvec_schur"] = jax.jit(matvec_schur)
     ops["dC"] = jax.jit(lambda eps, th, w, e_i: ops["dJ_v"](eps, th, ops["vjp"](eps, th, w), e_i)
                         + ops["jvp"](eps, th, ops["dJT_w"](eps, th, w, e_i)))
@@ -139,7 +147,11 @@ class FieldFisher:
         eps, th, var = self.eps_fid, self.theta_fid, 1.0 / self.invvar
         E = [jnp.zeros(n).at[i].set(1.0) for i in range(n)]
         dC = lambda w, i: self.ops["dC"](eps, th, w, E[i])
-        solve = lambda b: self.ops["solve_C"](eps, th, var, b, tol, maxiter)
+        self.cg_res_C = []
+        def solve(b):
+            x, res = self.ops["solve_C"](eps, th, var, b, tol, maxiter)
+            self.cg_res_C.append(float(res))
+            return x
         key = jax.random.PRNGKey(seed)
         Fs = list(Fs_prev) if Fs_prev else []
         F = sum(Fs) if Fs else np.zeros((n, n))
@@ -158,7 +170,8 @@ class FieldFisher:
             Fp = 0.5 * (Fp + Fp.T)
             Fs.append(Fp); F = F + Fp
             rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1e6
-            self.log(f"  probe {p_+1}/{n_probes}: sigma(f_NL) running = {sigma_of(F / len(Fs) + self.prior):.2f}  {time.time()-t0:.0f}s  maxRSS {rss:.1f} GB")
+            self.log(f"  probe {p_+1}/{n_probes}: sigma(f_NL) running = {sigma_of(F / len(Fs) + self.prior):.2f}  {time.time()-t0:.0f}s  maxRSS {rss:.1f} GB  max CG resid {max(self.cg_res_C):.1e}")
+            self.cg_res_C = []
             if probe_callback is not None:
                 probe_callback(Fs)
         self.F_marginal = F / len(Fs) + self.prior
