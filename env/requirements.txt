@@ -17,3 +17,6 @@ classy                    # CLASS cross-check of DISCO-EB
 astropy
 fitsio
 healpy
+fastprogress==1.0.3        # blackjax dep; 1.1.x pulls fasthtml
+blackjax==1.3
+optax, jaxopt, chex, absl-py, toolz, fastcore  # blackjax deps (--no-deps installs)

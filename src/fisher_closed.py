@@ -131,27 +131,33 @@ class Tier1:
 # ----------------------------------------------------------------------------------------------
 # Tier 2
 # ----------------------------------------------------------------------------------------------
-def triangles(kmin, kmax, dk):
-    """All triangle bins k1 >= k2 >= k3 >= kmin with k1 <= kmax and k3 >= k1 - k2 (bin centres)."""
-    ks = np.arange(kmin + dk / 2, kmax, dk)
+def triangles(kmin, kmax, dk, log_bins=None):
+    """All triangle bins k1 >= k2 >= k3 >= kmin with k1 <= kmax and k3 >= k1 - k2 (bin centres).
+    log_bins=n: n logarithmic bins between kmin and kmax instead of linear width dk; returns per-bin
+    widths so that the triangle volume element is dk1 dk2 dk3."""
+    if log_bins:
+        edges = np.logspace(np.log10(kmin), np.log10(kmax), log_bins + 1)
+    else:
+        edges = np.arange(kmin, kmax + 1e-12, dk)
+    ks = 0.5 * (edges[1:] + edges[:-1]); dks = np.diff(edges)
     out = []
     for i, k1 in enumerate(ks):
         for j, k2 in enumerate(ks[:i + 1]):
             for l, k3 in enumerate(ks[:j + 1]):
-                if k3 >= k1 - k2 - 1e-12:
+                if k3 + dks[l] / 2 >= k1 - k2 - 1e-12:           # triangle closes somewhere in the bin
                     sB = 6 if (i == j == l) else (2 if (i == j or j == l) else 1)
-                    out.append((k1, k2, k3, sB))
+                    out.append((k1, k2, k3, sB, dks[i] * dks[j] * dks[l]))
     a = np.array(out)
-    return a[:, 0], a[:, 1], a[:, 2], a[:, 3]
+    return a[:, 0], a[:, 1], a[:, 2], a[:, 3], a[:, 4]
 
 
 class Tier2:
     def __init__(self, cosmo: Cosmology, shells, layout: ParamLayout, sgeom: ShellGeometry,
-                 kmax=0.025, kmin=None, dk=0.002, L=10000.0):
+                 kmax=0.025, kmin=None, dk=0.002, L=10000.0, log_bins=None):
         self.cosmo, self.shells, self.layout, self.sg = cosmo, shells, layout, sgeom
         self.kmin = kmin or 2 * np.pi / L
         self.kmax, self.dk = kmax, dk
-        self.k1, self.k2, self.k3, self.sB = triangles(self.kmin, kmax, dk)
+        self.k1, self.k2, self.k3, self.sB, self.dk3 = triangles(self.kmin, kmax, dk, log_bins)
 
     @staticmethod
     def F2(k1, k2, k3):
@@ -192,7 +198,7 @@ class Tier2:
             inv = 0.0
             for dVz, n in zip(dV, nobs):
                 inv = inv + dVz / ((Pt[0] + 1 / n) * (Pt[1] + 1 / n) * (Pt[2] + 1 / n))
-            wt = k1 * k2 * k3 * self.dk ** 3 / (8 * np.pi ** 4 * sB) * inv
+            wt = k1 * k2 * k3 * jnp.asarray(self.dk3) / (8 * np.pi ** 4 * sB) * inv
             F6 = jnp.einsum("t,ti,tj->ij", wt, dB, dB)
             F += _embed(np.asarray(F6), self.layout, i)
         return F
