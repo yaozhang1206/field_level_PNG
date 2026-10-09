@@ -81,13 +81,81 @@ $b_1 f\mu^2$ instead of $f\mu^2$ in the Kaiser term; Lagrangian weights advected
 $\delta_g = (b_1 + b_\phi f_{\rm NL}/T + f\mu^2)\,\delta$ at linear order, and $\phi_g$ needs no growth factor because it is
 primordial. (An early version scaled $\delta_L$ without $D_s$ in the weights; the mode-level test caught it.)
 
-### 2.4 Selection
+### 2.4 Selection: the expected-counts field
 
-Expected counts per voxel, $\bar n_t(\mathbf{x})V_{\rm cell}$, are built once as static arrays: radial range of the shell in
-$\chi$, $\bar n = \bar c\,{\rm NX}(z)$ (observed density = completeness $\bar c = A_{\rm eff}/A_{\rm full}$ times the
-catalogue's completeness-corrected NX, as in Part A's "full" treatment), times the fractional HEALPix (nside 64)
-coverage from the QSO randoms. Footprint: 9,070 deg$^2$. Voxels in the footprint: 46,090 (QSO) and 7,647 (LRG) at
-$80^3$, 8× that at $160^3$.
+The selection enters the model as a static field $\bar N_s(\mathbf{x})$ of expected counts per voxel, one per shell, that
+multiplies the dimensionless galaxy density. It encodes the radial shell boundaries, the angular footprint, and the
+observed number density; nothing in it depends on $\varepsilon$ or $\theta$.
+
+**Voxel geometry.** The box has $L = 10{,}000\,h^{-1}$Mpc with the observer at its centre, $\mathbf{x}_{\rm obs} = (L/2, L/2, L/2)$.
+For every voxel centre $\mathbf{x}$:
+$$\mathbf{r} = \mathbf{x} - \mathbf{x}_{\rm obs},\qquad \chi(\mathbf{x}) = |\mathbf{r}|,\qquad \hat{\mathbf{r}} = \mathbf{r}/\chi,$$
+and $z(\mathbf{x})$ is obtained by inverting $\chi(z) = \int_0^z c\,dz'/H(z')$ for the Planck 2018 cosmology (tabulated on a
+fine $z$ grid and interpolated). The direction $\hat{\mathbf{r}}$ is also mapped to a HEALPix pixel at nside 64
+(0.84 deg$^2$ pixels). QSOs at $z = 3.1$ sit at $\chi \approx 4{,}450\,h^{-1}$Mpc, inside the half-box of $5{,}000$.
+
+**Radial selection.** Shell $s$ of tracer $t$ covers $z^s_{\rm lo} < z < z^s_{\rm hi}$ (QSO 0.8–1.3, 1.3–2.1, 2.1–3.1; LRG
+0.4–0.6, 0.6–0.8, 0.8–1.1). Its indicator is
+$$\Theta_s(\mathbf{x}) = \big[\chi(z^s_{\rm lo}) \le \chi(\mathbf{x}) < \chi(z^s_{\rm hi})\big].$$
+The shells of one tracer partition its radial range. QSO and LRG shells overlap in volume (0.8–1.1) but are different
+tracers with separate data fields $d_{\rm QSO}$, $d_{\rm LRG}$ that share the same $\varepsilon$.
+
+**Angular coverage $W(\hat{\mathbf{r}})$.** A fractional HEALPix map (nside 64, RING) built once from the public DR1 QSO
+random catalogues (NGC and SGC, one random file each):
+$$W(p) = \min\!\left(1,\ \frac{N_{\rm ran}(p)}{N_{\rm full}}\right),\qquad N_{\rm full} = \text{90th percentile of } N_{\rm ran}(p) \text{ over occupied pixels},$$
+so $W = 1$ in well-covered pixels, fractional at footprint edges and in holes, and 0 outside the survey. QSO randoms
+are used for both tracers because the QSO fibre completeness is the highest ($\approx 0.95$), so their randoms trace
+the geometric footprint most faithfully. $W$ scales the expected counts rather than acting as a binary mask, which is
+the correct treatment of partially covered voxels. The geometric area quoted elsewhere, $A_{\rm full} = 9{,}070$ deg$^2$,
+comes from the same randoms at nside 512 with a $\ge 2$-random threshold per pixel.
+
+**Observed number density $\bar n_t(z)$.** This follows the Part A "full" treatment, which is the one that reproduced
+DESI's QSO and LRG statistical errors. Three densities must be distinguished:
+
+- ${\rm NX}(z)$: the DESI catalogue column used for FKP weights. It is the *completeness-corrected* density, i.e. the
+  density that would be observed at full fibre completeness. It integrates to the weighted galaxy count $N_w$ only
+  over the completeness-weighted *effective* area, which is what defines
+  $$A_{\rm eff} = \frac{N_w}{\int {\rm NX}(z)\,\frac{dV}{dz\,d\Omega}\,dz}\quad(\text{per steradian, converted to deg}^2):\qquad
+  A_{\rm eff} = 5{,}417\ (\text{LRG}),\ 7{,}159\ (\text{QSO})\ \text{deg}^2 .$$
+- $\bar c_t = A_{\rm eff}/A_{\rm full}$: the mean fibre completeness, 0.60 (LRG) and 0.79 (QSO).
+- $\bar n_t(z) = \bar c_t\,{\rm NX}_t(z)$: the density of galaxies *actually observed* per unit volume of the geometric
+  footprint. It is tabulated in 60 redshift bins from the clustering catalogues and interpolated at $z(\mathbf{x})$; it
+  is zero outside the tracer's redshift range.
+
+The reasoning: sample variance is set by the full geometric volume in which galaxies are observed (the field is traced
+everywhere inside $A_{\rm full}$, with completeness weights restoring the mean), while shot noise is set by the density
+actually observed there. Using $A_{\rm eff}$ for both gave an LRG error 25 % too large in Part A.
+
+**Expected counts per voxel.** For shell $s$ of tracer $t$,
+$$\bar N_s(\mathbf{x}) = \bar n_t\big(z(\mathbf{x})\big)\,V_{\rm cell}\,W(\hat{\mathbf{r}})\,\Theta_s(\mathbf{x}),\qquad V_{\rm cell} = (L/N_{\rm grid})^3,$$
+stored as a static array (`nbar_cell[s]`). The model field of tracer $t$ is
+$$M_t(\mathbf{x}) = \sum_{s\in t}\bar N_s(\mathbf{x})\,\rho_s(\mathbf{x}),\qquad \rho_s = 1 + \delta_{g,s},$$
+where $\rho_s$ is the CIC deposit of the Lagrangian weights $w(\mathbf{q})$ at the shell's scale factor $a_s$. Because there
+is exactly one particle per grid cell and $\langle w\rangle = 1$, $\rho_s$ has unit mean and no further normalisation is
+needed. Each shell is painted with the whole particle set (particles outside the shell's radial range contribute
+nothing because $\Theta_s = 0$ there); this costs one scatter per shell per model evaluation.
+
+**Noise variance and footprint.** The Gaussian noise variance is the *unperturbed* expectation,
+$$\sigma_t^2(\mathbf{x}) = \max\!\Big(\sum_{s\in t}\bar N_s(\mathbf{x}),\ 10^{-3}\Big),$$
+the floor keeping $1/\sigma^2$ finite in voxels where $W$ is tiny. The footprint of tracer $t$ is the set of voxels with
+$\sum_s \bar N_s > 0$; only those enter the data vector (46,090 QSO and 7,647 LRG voxels at $80^3$, about 8× more at
+$160^3$), and all other voxels have weight exactly zero, as the brief requires (never $\sigma^2 = 0$). The same
+$\sigma_t^2$ defines $N$ in $C = J_\varepsilon J_\varepsilon^T + N$ and the preconditioner $N^{-1/2}$ of §3.2; its dynamic
+range, from the $10^{-3}$ floor to several hundred counts, is why the unpreconditioned CG stalled.
+
+**Typical counts.** At $80^3$ ($V_{\rm cell} = 125^3\,(h^{-1}{\rm Mpc})^3$): $\approx 590$ LRGs and $\approx 49$ QSOs per
+voxel at the mean density; at $160^3$: $\approx 74$ and $\approx 6$. Gaussian noise is therefore adequate at the Fisher
+level (§1), and the Poisson/Gaussian distinction only affects posterior shape in the sparsest high-$z$ QSO voxels.
+
+**Known simplifications.**
+1. Completeness enters only through the mean $\bar c_t$; the real DR1 fibre completeness varies across the sky
+   (single-tile LRG regions $\approx 0.5$, multi-tile $\approx 1$), which would modulate the shot noise voxel by voxel
+   and is not modelled.
+2. The angular coverage is evaluated at the voxel centre, so a voxel straddling the footprint edge is weighted by the
+   coverage of one pixel rather than the exact overlap.
+3. $\bar n_t$ is a function of $z$ only; the catalogue's NGC/SGC density differences are averaged.
+4. Radial selection is applied in Eulerian (redshift-space) voxel coordinates, consistent with how the data would be
+   binned, but no redshift-error smearing is included.
 
 ### 2.5 Autodiff through DISCO-DJ
 
@@ -116,13 +184,37 @@ $v \mapsto J_\varepsilon^T\!\left(N^{-1}J_\varepsilon v\right) + v$ (one jvp, on
 so this is the curvature of the joint $(\varepsilon,\theta)$ log-posterior at the truth, and its Schur complement is the
 curvature of the *profile* likelihood in $\theta$ (maximised over $\varepsilon$). It is not the curvature of the marginal.
 
-**Per-mode value for a linear model.** Take one complex Fourier mode with $M = \sqrt{P_s(\theta)}\,\varepsilon$, noise $N$.
-Then $u = \partial_\theta M = (\partial_\theta\sqrt{P_s})\varepsilon$, and the Schur complement reduces to
-$u^T(P_s + N)^{-1}u$, whose expectation over $\varepsilon$ is
-$$F^{\rm Schur} = \frac{(\partial_i P_s)(\partial_j P_s)}{2P_s\,(P_s + N)}\quad\text{per independent complex mode}.$$
-The exact Gaussian-field Fisher for the same mode (parameters in the covariance) is
-$$F^{\rm exact} = \frac{(\partial_i P_s)(\partial_j P_s)}{(P_s + N)^2},\qquad
-\frac{F^{\rm Schur}}{F^{\rm exact}} = \frac{P_s + N}{2P_s}.$$
+**Per-mode value for a linear model: definitions.** Take one complex Fourier mode of the *model* galaxy field. For
+the strictly linear model used in the validation tests,
+$$M(\mathbf{k}) = \underbrace{\bar nV\left[b_1 + \frac{b_\phi f_{\rm NL}}{T(k)} + f\mu^2\right]D\sqrt{P_{\rm lin}(k)}}_{\sqrt{P_s(\theta)}}\;\tilde\varepsilon(\mathbf{k}),
+\qquad \langle|\tilde\varepsilon(\mathbf{k})|^2\rangle = 1,$$
+so the signal power of the mode is
+$$P_s(\theta) = \langle|M(\mathbf{k})|^2\rangle_\varepsilon = (\bar nV)^2\,P_g(k,\mu;\theta),\qquad
+P_g = \left[b_1 + \frac{b_\phi f_{\rm NL}}{T(k)} + f\mu^2\right]^2 D^2 P_{\rm lin}(k),$$
+i.e. the galaxy power spectrum in voxel-count units. The noise is Gaussian with per-voxel variance $\bar nV$, hence
+white in Fourier space: $N = \bar nV$ per mode (shot noise $1/\bar n$ in physical units). Only the ratio
+$P_s/N = \bar n P_g$ enters the results, which is why they are quoted in terms of $P_g$ and $1/\bar n$ elsewhere.
+
+The derivation assumes:
+
+1. *A Gaussian field whose parameters enter only through its power.* $\varepsilon$ is Gaussian and the model is linear in
+   it, so each mode is a Gaussian variable of variance $P_s(\theta) + N$. The exact marginal Fisher is then
+   $\tfrac12{\rm Tr}[C^{-1}\partial_iC\,C^{-1}\partial_jC]$ per mode, which gives
+   $$F^{\rm exact}_{ij} = \frac{(\partial_iP_s)(\partial_jP_s)}{(P_s+N)^2}$$
+   per independent complex mode (two real degrees of freedom, each contributing $\tfrac12\,\partial_i\ln{\rm Var}\,\partial_j\ln{\rm Var}$).
+2. *Diagonal in $\mathbf{k}$.* Modes are independent: a periodic box with uniform $\bar n$ and no window. This is why the
+   comparison is made in the $16^3$ and $80^3$ box tests; with the DR1 window the modes couple and the per-mode
+   statement is only approximate, which the DR1-footprint runs then measure numerically.
+3. *The Schur side uses the same $P_s$.* With $u = \partial_\theta M = (\partial_\theta\sqrt{P_s})\,\tilde\varepsilon$ (derivative of
+   the mean at fixed $\varepsilon$), $F_{\theta\varepsilon} = u\sqrt{P_s}/N$ and $F_{\varepsilon\varepsilon} = P_s/N + 1$, the Schur complement
+   is $u^2/(P_s+N)$; averaged over $\varepsilon$,
+   $$F^{\rm Schur}_{ij} = \frac{(\partial_iP_s)(\partial_jP_s)}{2P_s(P_s+N)},\qquad
+   \frac{F^{\rm Schur}}{F^{\rm exact}} = \frac{P_s+N}{2P_s}.$$
+
+Nothing is assumed about the *data* being Gaussian beyond the noise; the statement is about the model, a Gaussian
+linear field of power $P_s(\theta)$ plus white noise $N$, mode by mode. For the 2LPT model the per-mode picture does
+not apply (the model is not linear in $\varepsilon$, so $P_s$ is not defined), which is why the nonlinear Schur and
+exact-marginal numbers of §6 are not related by this factor.
 So the Schur estimate is optimistic where $\bar nP \ll 1$ (QSOs: $F$ too large by $\approx N/2P$) and pessimistic by a
 factor 2 in $F$ where $\bar nP \gg 1$ (LRGs). The missing piece is the $\tfrac12\ln\det F_{\varepsilon\varepsilon}(\theta)$
 "volume" term that marginalisation produces and a profile ignores. The brief's statement that the Schur result must
