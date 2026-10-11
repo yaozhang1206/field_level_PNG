@@ -15,7 +15,7 @@ import blackjax
 
 
 def run_nuts(logdensity, state0, n_warmup=200, n_samples=1000, seed=0, target_accept=0.8,
-             diagonal_mass=True, max_doublings=8, log=print, thin=1, unpack=None, record=None):
+             diagonal_mass=True, max_doublings=8, log=print, thin=1, unpack=None, record=None, checkpoint=None):
     """Window-adapted NUTS. `record(eps, theta) -> dict of scalars` is evaluated per kept sample."""
     key = jax.random.PRNGKey(seed)
     key, kw, ks = jax.random.split(key, 3)
@@ -25,11 +25,11 @@ def run_nuts(logdensity, state0, n_warmup=200, n_samples=1000, seed=0, target_ac
     (state, params), _ = warmup.run(kw, state0, num_steps=n_warmup)
     log(f"  warmup done: step size {float(params['step_size']):.3e}  {time.time()-t0:.0f}s")
     kernel = jax.jit(blackjax.nuts(logdensity, **params, max_num_doublings=max_doublings).step)
-    return _sample(kernel, state, ks, n_samples, thin, unpack, record, log, t0)
+    return _sample(kernel, state, ks, n_samples, thin, unpack, record, log, t0, checkpoint)
 
 
 def run_hmc(logdensity, state0, n_leapfrog=32, n_warmup=200, n_samples=1000, seed=0, target_accept=0.8,
-            diagonal_mass=True, log=print, thin=1, unpack=None, record=None):
+            diagonal_mass=True, log=print, thin=1, unpack=None, record=None, checkpoint=None):
     key = jax.random.PRNGKey(seed)
     key, kw, ks = jax.random.split(key, 3)
     t0 = time.time()
@@ -39,10 +39,11 @@ def run_hmc(logdensity, state0, n_leapfrog=32, n_warmup=200, n_samples=1000, see
     (state, params), _ = warmup.run(kw, state0, num_steps=n_warmup)
     log(f"  warmup done: step size {float(params['step_size']):.3e}  {time.time()-t0:.0f}s")
     kernel = jax.jit(blackjax.hmc(logdensity, **params, num_integration_steps=n_leapfrog).step)
-    return _sample(kernel, state, ks, n_samples, thin, unpack, record, log, t0)
+    return _sample(kernel, state, ks, n_samples, thin, unpack, record, log, t0, checkpoint)
 
 
-def _sample(kernel, state, key, n_samples, thin, unpack, record, log, t0):
+def _sample(kernel, state, key, n_samples, thin, unpack, record, log, t0, checkpoint=None):
+    """checkpoint(thetas, accept, nsteps) is called every 250 kept samples (partial results)."""
     thetas, recs, accept, nsteps = [], [], [], []
     for i in range(n_samples * thin):
         key, k = jax.random.split(key)
@@ -57,6 +58,8 @@ def _sample(kernel, state, key, n_samples, thin, unpack, record, log, t0):
         if (i + 1) % max(1, (n_samples * thin) // 10) == 0:
             log(f"  sample {i+1}/{n_samples*thin}: f_NL = {float(th[0]):.2f}, accept {np.nanmean(accept[-50:]):.2f}, "
                 f"mean leapfrog {np.mean(nsteps[-50:]):.0f}, {time.time()-t0:.0f}s")
+        if checkpoint is not None and len(thetas) % 250 == 0 and i % thin == 0:
+            checkpoint(np.array(thetas), np.array(accept), np.array(nsteps))
     return dict(theta=np.array(thetas), records=recs, accept=np.array(accept), n_steps=np.array(nsteps),
                 time=time.time() - t0, final_state=state)
 

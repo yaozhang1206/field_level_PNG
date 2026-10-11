@@ -19,13 +19,15 @@ tracers = ["QSO", "LRG"] if TR == "both" else [TR]
 shells = [default_shell(t, 1.0, 1.0, float(B1_OF_Z[t](1.0)), P_UMF[t]) for t in tracers]
 nbar = {t: nbar_all[t] for t in tracers}
 fm = ForwardModel(cosmo, shells, L=L, res=res, nz_funcs={t: (lambda z, n=nbar[t]: np.full_like(z, n)) for t in nbar}, ang_mask=None, observer=[L/2, L/2, -200*L])
-for i, s in enumerate(shells): fm.nbar_cell[i] = jnp.full((res,)*3, nbar[s.tracer] * fm.V_cell)
-fm.footprint = {t: np.ones((res,)*3, bool) for t in fm.tracers}
+MASK = float(os.environ.get("MASK", 0))      # >0: keep only voxels within a sphere of radius MASK*L about the centre
+x = (np.arange(res) + 0.5) / res - 0.5; X, Y, Z = np.meshgrid(x, x, x, indexing="ij"); inside = np.sqrt(X**2 + Y**2 + Z**2) < MASK if MASK > 0 else np.ones((res,)*3, bool)
+for i, s in enumerate(shells): fm.nbar_cell[i] = jnp.asarray(np.where(inside, nbar[s.tracer] * fm.V_cell, 0.0))
+fm.footprint = {t: inside.copy() for t in fm.tracers}
 lay = ParamLayout(shells); th0 = lay.fiducial(0.0)
 eps0 = jax.random.normal(jax.random.PRNGKey(21), (res,)*3, dtype=jnp.float64)
 class _SG:
-    def tables(self, s): return np.array([1.0]), np.array([L**3]), np.array([nbar[s.tracer]])
-lines = [f"box $L={L:.0f}$, ${res}^3$ (cell {L/res:.0f} Mpc/h, $k_{{\\rm Ny}}={np.pi*res/L:.4f}$), tracers {tracers}, $\\bar n$ {nbar}, Gaussian noise, $f_{{\\rm NL,true}}=0$"]
+    def tables(self, s): return np.array([1.0]), np.array([L**3 * inside.mean()]), np.array([nbar[s.tracer]])
+lines = [f"box $L={L:.0f}$, ${res}^3$ (cell {L/res:.0f} Mpc/h, $k_{{\\rm Ny}}={np.pi*res/L:.4f}$), tracers {tracers}, $\\bar n$ {nbar}, Gaussian noise, $f_{{\\rm NL,true}}=0$" + (f"; spherical window radius {MASK}L ({100*inside.mean():.0f}% of voxels)" if MASK > 0 else "")]
 res_out = {}
 t1 = Tier1(cosmo, shells, lay, _SG(), L=L, res=res, continuum=False)
 F1 = t1.fisher(); s_tier1 = sigma_of(F1)
@@ -52,7 +54,7 @@ for ax, m in zip(axes, res_out):
     ax.axhspan(-res_out[m]["tier1_exact"], res_out[m]["tier1_exact"], color="g", alpha=0.15, label=f"Tier 1 exact {res_out[m]['tier1_exact']:.3g}")
     ax.axhspan(-res_out[m]["hutchinson"], res_out[m]["hutchinson"], color="r", alpha=0.12, label=f"Hutchinson linearised {res_out[m]['hutchinson']:.3g}")
     ax.set_title(f"{m} model: chain std {res_out[m]['chain']['std']:.3g}"); ax.set_xlabel("sample"); ax.set_ylabel("$f_{NL}$"); ax.legend(fontsize=7)
-tag = f"nonlinear_box_L{L:.0f}_res{res}_{TR}"
+tag = f"nonlinear_box_L{L:.0f}_res{res}_{TR}" + (f"_mask{MASK:g}" if MASK > 0 else "")
 save_fig(fig, f"sampler_{tag}")
 json.dump(res_out, open(ROOT / "results" / f"sampler_{tag}.json", "w"))
 write_note(f"sampler_{tag}", "Stage 2.1: posterior width, linear vs full 2LPT model (small box, production cell size)", lines +

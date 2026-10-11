@@ -45,10 +45,17 @@ print(f"[{tag}] state dim {st0.size}, free params {[lay.names[i] for i in free]}
 t0 = time.time(); g = jax.grad(logdens)(st0); g.block_until_ready(); t1 = time.time(); g = jax.grad(logdens)(st0); g.block_until_ready()
 print(f"[{tag}] gradient: {t1-t0:.1f}s compile, {time.time()-t1:.3f}s per evaluation", flush=True)
 log = lambda *x: print(f"[{tag}]", *x, flush=True)
+def checkpoint(theta, accept, nsteps):
+    summ = summarize_chain(theta, lay.names)
+    np.savez(outfile, theta=theta, names=np.array(lay.names), accept=accept, n_steps=nsteps, time=time.time() - t1, partial=True,
+             schur_sigma=ff.sigma(), args=json.dumps(vars(a)))
+    json.dump(dict(tag=tag, args=vars(a), summary=summ, partial=True, n_done=int(len(theta)), schur_sigma=ff.sigma()),
+              open(ROOT / "results" / f"chain_{tag}.json", "w"), indent=1)
+    log(f"  checkpoint {len(theta)} samples: f_NL std {summ['f_NL']['std']:.2f}, tau {summ['f_NL']['tau']:.1f}")
 if a.sampler == "nuts":
-    out = run_nuts(logdens, st0, n_warmup=a.n_warmup, n_samples=a.n_samples, seed=a.seed, unpack=unpack, log=log, max_doublings=a.max_doublings, thin=a.thin)
+    out = run_nuts(logdens, st0, n_warmup=a.n_warmup, n_samples=a.n_samples, seed=a.seed, unpack=unpack, log=log, max_doublings=a.max_doublings, thin=a.thin, checkpoint=checkpoint)
 elif a.sampler == "hmc":
-    out = run_hmc(logdens, st0, n_leapfrog=a.leapfrog, n_warmup=a.n_warmup, n_samples=a.n_samples, seed=a.seed, unpack=unpack, log=log, thin=a.thin)
+    out = run_hmc(logdens, st0, n_leapfrog=a.leapfrog, n_warmup=a.n_warmup, n_samples=a.n_samples, seed=a.seed, unpack=unpack, log=log, thin=a.thin, checkpoint=checkpoint)
 else:
     out = run_mclmc(logdens, st0, n_warmup=a.n_warmup, n_samples=a.n_samples, seed=a.seed, unpack=unpack, log=log, thin=a.thin)
 summ = summarize_chain(out["theta"], lay.names)
