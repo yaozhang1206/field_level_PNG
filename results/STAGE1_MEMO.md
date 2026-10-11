@@ -188,3 +188,21 @@ i.e. $\bar nP \approx 0.4$–0.7 for QSOs at $z > 2$ and the sample-variance reg
 
 - `results/fisher_pk_full.json`, `results/fisher_closed.json`, `results/fisher_field_*.json`, `results/fisher_field.json`
 - notes and figures for every test in `test/notes`, `test/figures`
+
+
+---
+
+## 9. Stage 2 progress (2026-10-11)
+
+- Sampler: BlackJAX NUTS on $[\varepsilon, \theta_{\rm w}]$ (identity mass for $\varepsilon$, Fisher-whitened $\theta$). Validated on an
+  exactly Gaussian 4096-dimensional target (means and variances to $\lesssim 1$ %); 6-mock $f_{\rm NL}$ widths average 0.77 ± 0.09
+  vs Fisher 0.64 with calibrated posterior means (`test/notes/sampler16_gauss.md`).
+- **Is the quadratic-coupling information real?** Small periodic boxes with the production cell size, same mock under the
+  linear and the full 2LPT model (`test/notes/stage2_smallbox_summary.md`): posterior $\sigma$ ratio linear/full = 1.28–1.42,
+  Fisher-predicted 1.30–1.40. Yes, at $\gtrsim 85$ % of the Fisher prediction. The Stage 1 caveat is largely retired; the DR1
+  $80^3$ chains (queued) give the direct number.
+- Tier 2 (tree-level bispectrum) is converged in binning and still adds < 3 %: the tree-level real-space bispectrum with
+  Gaussian covariance is simply not where this information is; it sits in the modulation of small-scale power by the
+  large-scale field, which the field-level posterior captures.
+- Cost: NUTS needs 31 leapfrog steps per sample on the linear model and $\approx 255$ on the full model; $\tau_{\rm int}(f_{\rm NL})$
+  = 2–8 samples. At $80^3$ this projects to $\sim 10$–25 s per sample on one GH200.
