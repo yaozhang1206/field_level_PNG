@@ -206,3 +206,11 @@ i.e. $\bar nP \approx 0.4$–0.7 for QSOs at $z > 2$ and the sample-variance reg
   large-scale field, which the field-level posterior captures.
 - Cost: NUTS needs 31 leapfrog steps per sample on the linear model and $\approx 255$ on the full model; $\tau_{\rm int}(f_{\rm NL})$
   = 2–8 samples. At $80^3$ this projects to $\sim 10$–25 s per sample on one GH200.
+- **DR1 configuration, $80^3$, same mock under both models** (`results/chain_nuts_res80_*.json`): linear model
+  $\sigma(f_{\rm NL}) = 7.8 \pm 0.3$ (3000 samples, ESS 269; Fisher 8.28); full 2LPT model $8.0 \pm 0.8$ (500 samples, ESS 57;
+  linearised Fisher 5.3). Unlike the periodic boxes, the full model shows **no gain** over the two-point information at
+  DR1; a width of 6 is disfavoured at $\approx 2.5\sigma$ by the short chain. Interpretation: the quadratic-coupling
+  information is a modulation of small-scale power by the large-scale potential, which the posterior can only use if
+  those large-scale modes are themselves well constrained; the DR1 window removes exactly those modes, while the
+  linearised Fisher holds them fixed at the fiducial. Long chains (2500 samples, second mock, $160^3$) are queued to
+  confirm. If confirmed, the realistic DR1 forecast is $\sigma \approx 7$–8 and the brief's reframing branch applies.
