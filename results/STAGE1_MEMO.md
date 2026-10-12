@@ -229,3 +229,8 @@ i.e. $\bar nP \approx 0.4$–0.7 for QSOs at $z > 2$ and the sample-variance reg
   $\sigma(f_{\rm NL}) = 5.7 \pm 0.4$ vs linear 6.5 ± 0.2: a 12 % gain at $k_{\max} = 0.1$ (10 % at $80^3$). With the 40 %
   $b_\phi$ prior propagated: $\approx 7.0$. Cost at $160^3$: 63 ms per gradient, 127 leapfrog steps, 6.5 s per sample,
   $\sim 150$ s per independent $f_{\rm NL}$ sample on one GH200 ($\approx 2$ GPU-days for 1000 effective samples).
+- **$160^3$ pooled** (resumed chain 3300 samples + independent chain 1200 samples, both same mock; ESS 171):
+  **$\sigma(f_{\rm NL}) = 5.6 \pm 0.3$** with $b_\phi$ fixed, $\approx 6.8$ with the 40 % $b_\phi$ prior; chain means agree (−3.85, −3.84).
+  Mixing vs tree depth at $160^3$: depth 7 (127 leapfrog) $\tau = 24$; depth 8 (255 leapfrog) $\tau = 10.5$ — the same ESS per
+  gradient ($3.3$ vs $3.7\times10^{-4}$), i.e. $\approx 3\times10^3$ gradient evaluations per independent $f_{\rm NL}$ sample, three
+  times the brief's $10^3$ target. Depth 8 fits in memory once warmup positions are not stored.
