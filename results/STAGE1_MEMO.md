@@ -220,3 +220,6 @@ i.e. $\bar nP \approx 0.4$–0.7 for QSOs at $z > 2$ and the sample-variance reg
   Gaussian priors of width 2 on $b_2$, $b_K$ is running to see how much of the remaining gap is prior volume.
   Mixing: $\tau_{\rm int}(f_{\rm NL}) = 6$–11 samples at 255 leapfrog steps, i.e. $\sim 2\times10^3$ gradient evaluations per
   independent $f_{\rm NL}$ sample, 2 s per sample at $80^3$ on one GH200 (0.014 s per gradient).
+- Gaussian priors of width 2 on $b_2$, $b_K$ (seed 0): $\sigma(f_{\rm NL}) = 6.89 \pm 0.31$ vs 6.97 / 7.16 with flat priors: the
+  broad bias directions are not what limits $f_{\rm NL}$. Second mock (seed 1): full 7.51 ± 0.20 vs linear 7.45 ± 0.28, no gain.
+  **DR1 $80^3$ field-level result: $\sigma(f_{\rm NL}) \approx 7.0$–7.5** ($b_\phi$ fixed), $\approx 8.5$–9 with the 40 % $b_\phi$ prior.
