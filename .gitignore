@@ -4,3 +4,4 @@ __pycache__/
 results/cache/
 notebooks/.ipynb_checkpoints/
 *.fits
+results/chain_*.npz
