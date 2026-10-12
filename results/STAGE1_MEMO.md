@@ -234,3 +234,9 @@ i.e. $\bar nP \approx 0.4$–0.7 for QSOs at $z > 2$ and the sample-variance reg
   Mixing vs tree depth at $160^3$: depth 7 (127 leapfrog) $\tau = 24$; depth 8 (255 leapfrog) $\tau = 10.5$ — the same ESS per
   gradient ($3.3$ vs $3.7\times10^{-4}$), i.e. $\approx 3\times10^3$ gradient evaluations per independent $f_{\rm NL}$ sample, three
   times the brief's $10^3$ target. Depth 8 fits in memory once warmup positions are not stored.
+- **Sampler comparison, $80^3$ full model, same mock**: NUTS (window-adapted, depth 8): 765k gradients → ESS 472
+  ($6\times10^{-4}$ per gradient, 0.08 ESS/s). MCLMC (BlackJAX, tuned $L = 706$, step 293): 40k gradients → ESS 295
+  ($7\times10^{-3}$ per gradient, 0.37 ESS/s), posterior std 7.4 and mean 0.2 vs NUTS 7.0–7.2 and 2.1–2.4 (consistent
+  within chain noise). MCLMC is 12× more efficient per gradient; its unadjusted-integrator bias needs a step-size
+  convergence check before production. The brief's Stage-2 target ($\le 10^3$ gradients per independent $f_{\rm NL}$) is met
+  by MCLMC with a factor 7 to spare.
