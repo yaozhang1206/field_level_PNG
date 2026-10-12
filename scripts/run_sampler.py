@@ -11,7 +11,7 @@ from geometry import dr1_angular_mask
 from forward_model import ForwardModel, ParamLayout
 from posterior import FieldPosterior
 from fisher_field import FieldFisher
-from sampler import run_nuts, run_hmc, run_mclmc, summarize_chain
+from sampler import run_nuts, run_nuts_da, run_nuts_window_loop, run_hmc, run_mclmc, summarize_chain
 
 ap = argparse.ArgumentParser()
 ap.add_argument("--res", type=int, default=80); ap.add_argument("--linear", action="store_true")
@@ -21,6 +21,7 @@ ap.add_argument("--leapfrog", type=int, default=32); ap.add_argument("--fnl_true
 ap.add_argument("--seed", type=int, default=0); ap.add_argument("--tag", default=""); ap.add_argument("--likelihood", default="gaussian")
 ap.add_argument("--max_doublings", type=int, default=8); ap.add_argument("--thin", type=int, default=1)
 ap.add_argument("--bias_prior", type=float, default=0.0, help="Gaussian prior width on b2 and bK about fiducial (0 = flat)")
+ap.add_argument("--adapt", default="auto", help="window (BlackJAX run, stores warmup) | loop (same adaptation, Python loop, no storage) | dual (identity mass) | auto (loop for res>=160)")
 a = ap.parse_args()
 L = 10000.0
 cosmo, geoms, shells, nz = build()
@@ -56,7 +57,12 @@ def checkpoint(theta, accept, nsteps):
     json.dump(dict(tag=tag, args=vars(a), summary=summ, partial=True, n_done=int(len(theta)), schur_sigma=ff.sigma()),
               open(ROOT / "results" / f"chain_{tag}.json", "w"), indent=1)
     log(f"  checkpoint {len(theta)} samples: f_NL std {summ['f_NL']['std']:.2f}, tau {summ['f_NL']['tau']:.1f}")
-if a.sampler == "nuts":
+adapt = a.adapt if a.adapt != "auto" else ("loop" if a.res >= 160 else "window")
+if a.sampler == "nuts" and adapt == "loop":
+    out = run_nuts_window_loop(logdens, st0, n_warmup=a.n_warmup, n_samples=a.n_samples, seed=a.seed, unpack=unpack, log=log, max_doublings=a.max_doublings, thin=a.thin, checkpoint=checkpoint)
+elif a.sampler == "nuts" and adapt == "dual":
+    out = run_nuts_da(logdens, st0, n_warmup=a.n_warmup, n_samples=a.n_samples, seed=a.seed, unpack=unpack, log=log, max_doublings=a.max_doublings, thin=a.thin, checkpoint=checkpoint)
+elif a.sampler == "nuts":
     out = run_nuts(logdens, st0, n_warmup=a.n_warmup, n_samples=a.n_samples, seed=a.seed, unpack=unpack, log=log, max_doublings=a.max_doublings, thin=a.thin, checkpoint=checkpoint)
 elif a.sampler == "hmc":
     out = run_hmc(logdens, st0, n_leapfrog=a.leapfrog, n_warmup=a.n_warmup, n_samples=a.n_samples, seed=a.seed, unpack=unpack, log=log, thin=a.thin, checkpoint=checkpoint)

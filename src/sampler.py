@@ -28,6 +28,60 @@ def run_nuts(logdensity, state0, n_warmup=200, n_samples=1000, seed=0, target_ac
     return _sample(kernel, state, ks, n_samples, thin, unpack, record, log, t0, checkpoint)
 
 
+def run_nuts_da(logdensity, state0, n_warmup=200, n_samples=1000, seed=0, target_accept=0.8, max_doublings=7,
+                log=print, thin=1, unpack=None, record=None, checkpoint=None, step_size0=0.02):
+    """NUTS with identity mass matrix and dual-averaging step-size adaptation in a Python loop: no storage of
+    warmup positions (BlackJAX's window adaptation keeps all of them, 6.5 GB at 160^3)."""
+    from blackjax.adaptation.step_size import dual_averaging_adaptation
+    key = jax.random.PRNGKey(seed)
+    t0 = time.time()
+    n = state0.size
+    imm = jnp.ones(n)
+    kernel_fn = blackjax.nuts.build_kernel()
+    step = jax.jit(lambda k, st, ss: kernel_fn(k, st, logdensity, ss, imm, max_num_doublings=max_doublings))
+    state = blackjax.nuts.init(state0, logdensity)
+    da_init, da_update, da_final = dual_averaging_adaptation(target=target_accept)
+    da = da_init(step_size0); ss = step_size0
+    for i in range(n_warmup):
+        key, k = jax.random.split(key)
+        state, info = step(k, state, ss)
+        da = da_update(da, info.acceptance_rate)
+        ss = float(jnp.exp(da.log_step_size))
+        if (i + 1) % max(1, n_warmup // 5) == 0:
+            log(f"  warmup {i+1}/{n_warmup}: step {ss:.3e}, accept {float(info.acceptance_rate):.2f}, leapfrog {int(info.num_integration_steps)}, {time.time()-t0:.0f}s")
+    ss = float(da_final(da))
+    log(f"  warmup done: step size {ss:.3e}  {time.time()-t0:.0f}s")
+    kernel = jax.jit(lambda k, st: step(k, st, ss))
+    return _sample(kernel, state, key, n_samples, thin, unpack, record, log, t0, checkpoint)
+
+
+def run_nuts_window_loop(logdensity, state0, n_warmup=200, n_samples=1000, seed=0, target_accept=0.8, max_doublings=7,
+                         log=print, thin=1, unpack=None, record=None, checkpoint=None, step_size0=0.02):
+    """Stan-style window adaptation (diagonal mass + dual-averaging step size) run as a Python loop so that no
+    warmup positions are stored (BlackJAX's window_adaptation.run keeps all of them: 6.5 GB at 160^3)."""
+    from blackjax.adaptation.window_adaptation import base, build_schedule
+    key = jax.random.PRNGKey(seed)
+    t0 = time.time()
+    kernel_fn = blackjax.nuts.build_kernel()
+    step = jax.jit(lambda k, st, ss, imm: kernel_fn(k, st, logdensity, ss, imm, max_num_doublings=max_doublings))
+    a_init, a_update, a_final = base(is_mass_matrix_diagonal=True, target_acceptance_rate=target_accept)
+    a_update = jax.jit(a_update)
+    state = blackjax.nuts.init(state0, logdensity)
+    astate = a_init(state.position, step_size0)
+    schedule = build_schedule(n_warmup)
+    for i, stage in enumerate(schedule):
+        key, k = jax.random.split(key)
+        state, info = step(k, state, astate.ss_state.step_size if hasattr(astate.ss_state, "step_size") else jnp.exp(astate.ss_state.log_step_size),
+                           astate.imm_state.inverse_mass_matrix)
+        astate = a_update(astate, stage, state.position, info.acceptance_rate)
+        if (i + 1) % max(1, n_warmup // 5) == 0:
+            log(f"  warmup {i+1}/{n_warmup}: step {float(jnp.exp(astate.ss_state.log_step_size)):.3e}, accept {float(info.acceptance_rate):.2f}, leapfrog {int(info.num_integration_steps)}, {time.time()-t0:.0f}s")
+    ss, imm = a_final(astate)
+    log(f"  warmup done: step size {float(ss):.3e}, inv. mass range [{float(imm.min()):.2e}, {float(imm.max()):.2e}]  {time.time()-t0:.0f}s")
+    kernel = jax.jit(lambda k, st: step(k, st, ss, imm))
+    return _sample(kernel, state, key, n_samples, thin, unpack, record, log, t0, checkpoint)
+
+
 def run_hmc(logdensity, state0, n_leapfrog=32, n_warmup=200, n_samples=1000, seed=0, target_accept=0.8,
             diagonal_mass=True, log=print, thin=1, unpack=None, record=None, checkpoint=None):
     key = jax.random.PRNGKey(seed)
