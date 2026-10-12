@@ -125,3 +125,7 @@ reference chain to confirm the MCLMC step.
 $b_\phi^s$ and $b_{\phi\delta}^s$ free per shell with Gaussian priors of 40 % about the universality values, $f_{\rm NL,true} = 0$,
 $80^3$, MCLMC at half the tuned step (60k gradients, ESS 202): $\sigma(f_{\rm NL}) = 8.1 \pm 0.4$ against 7.0–7.2 with $b_\phi$ fixed,
 a factor 1.13 (the Stage 1 propagation $f_{\rm NL} = A/b_\phi$ assumed 1.22). Applied to the $160^3$ result: $\approx 6.3$.
+
+At $160^3$ with $b_\phi$, $b_{\phi\delta}$ sampled (MCLMC step/2, ESS 252): $\sigma(f_{\rm NL}) = 6.0 \pm 0.3$ (× 1.08 over $b_\phi$ fixed).
+**Stage 2 result for the brief's go/no-go configuration: $\sigma(f_{\rm NL}) = 6.0 \pm 0.3$ on one DR1 mock**, versus 9.2 for the
+DESI DR1 $P(k)$ analysis and 4.0 from the Stage 1 linearised Fisher.

@@ -251,3 +251,7 @@ i.e. $\bar nP \approx 0.4$–0.7 for QSOs at $z > 2$ and the sample-variance reg
   $\approx 7$ GPU-hours), with a NUTS reference chain for the bias check.
 - **$b_\phi$, $b_{\phi\delta}$ sampled with the 40 % prior, $80^3$** (MCLMC step/2, 60k gradients, ESS 202): $\sigma(f_{\rm NL}) = 8.1 \pm 0.4$
   vs 7.0–7.2 with $b_\phi$ fixed, i.e. $\times 1.13$ (the Fisher propagation assumed $\times 1.22$). Same run at $160^3$ in progress.
+- **$160^3$, $b_\phi$, $b_{\phi\delta}$ sampled with the 40 % prior** (MCLMC step/2, 60k gradients, ESS 252): **$\sigma(f_{\rm NL}) = 6.0 \pm 0.3$**,
+  mean $-4.1$ (same mock as the $b_\phi$-fixed chains: 5.6 ± 0.3, means $-3.85$). This is the brief's go/no-go configuration
+  ($k_{\max} = 0.1$, bias marginalised, $b_\phi$ sampled): $6.0$ sits between the "go" ($\lesssim 5$) and "reframe" ($\gtrsim 7$)
+  branches, a 35 % improvement over the DESI DR1 $P(k)$ result (9.2). Single fiducial field; the second-mock chain measures the scatter.
