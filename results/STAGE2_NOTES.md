@@ -119,3 +119,9 @@ reference chain to confirm the MCLMC step.
 - $b_\phi$, $b_{\phi\delta}$ sampled with the 40 % prior at a non-zero fiducial $f_{\rm NL}$.
 - Poisson likelihood check at $160^3$ (6 QSOs per voxel).
 - Stage 3 (model mismatch on N-body halo catalogues) and Stage 4 (systematics) are untouched.
+
+## 8. $b_\phi$ marginalisation (added 2026-10-12)
+
+$b_\phi^s$ and $b_{\phi\delta}^s$ free per shell with Gaussian priors of 40 % about the universality values, $f_{\rm NL,true} = 0$,
+$80^3$, MCLMC at half the tuned step (60k gradients, ESS 202): $\sigma(f_{\rm NL}) = 8.1 \pm 0.4$ against 7.0–7.2 with $b_\phi$ fixed,
+a factor 1.13 (the Stage 1 propagation $f_{\rm NL} = A/b_\phi$ assumed 1.22). Applied to the $160^3$ result: $\approx 6.3$.

@@ -249,3 +249,5 @@ i.e. $\bar nP \approx 0.4$–0.7 for QSOs at $z > 2$ and the sample-variance reg
   Step/4 (148): mean $-3.5$, std 5.58, ESS 140 — converged at step/2. **Production sampler: MCLMC at half the auto-tuned
   step** ($\approx 250$ gradients per effective $f_{\rm NL}$ sample at $160^3$, 26 s on one GH200: 1000 effective samples in
   $\approx 7$ GPU-hours), with a NUTS reference chain for the bias check.
+- **$b_\phi$, $b_{\phi\delta}$ sampled with the 40 % prior, $80^3$** (MCLMC step/2, 60k gradients, ESS 202): $\sigma(f_{\rm NL}) = 8.1 \pm 0.4$
+  vs 7.0–7.2 with $b_\phi$ fixed, i.e. $\times 1.13$ (the Fisher propagation assumed $\times 1.22$). Same run at $160^3$ in progress.
