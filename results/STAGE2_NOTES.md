@@ -93,12 +93,14 @@ them fixed at the fiducial. A masked $16^3$ box test was attempted but is inconc
 | MCLMC (tuned $L$, step) | $80^3$ full | $1.4\times10^2$ | 2.7 s | posterior consistent with NUTS (std 7.4 vs 7.0–7.2) |
 | MCLMC (300-step tuning, step 592) | $160^3$ full | $0.95\times10^2$ | 10 s | **biased**: mean $-16.7$ vs $-3.85 \pm 0.4$, std 4.4 vs 5.6 |
 | MCLMC, step/2 (296), same $L$ | $160^3$ full | $2.5\times10^2$ | 26 s | mean $-4.2$, std 5.75: consistent with NUTS |
+| MCLMC, step/4 (148), same $L$ | $160^3$ full | $4.3\times10^2$ | 45 s | mean $-3.5$, std 5.58: converged |
 
-NUTS misses the brief's $10^3$-gradient target by a factor 2–3 at $160^3$; MCLMC beats it by a factor 10 but at $160^3$ its
-unadjusted integrator is inaccurate at the tuned step. Step-size convergence runs (step/2, step/4 at fixed $L$) are in
-progress; the production choice is MCLMC only if its mean and width converge to the NUTS values at a step that keeps
-$\lesssim 10^3$ gradients per effective sample. Projected production cost at $160^3$ with NUTS: $\approx 2$ GPU-days per 1000
-effective samples; with a converged MCLMC a few GPU-hours.
+NUTS misses the brief's $10^3$-gradient target by a factor 2–3 at $160^3$. MCLMC at the auto-tuned step is biased, but at
+half that step its mean and width agree with NUTS and are stable under a further halving: **the production sampler is
+MCLMC at half the auto-tuned step, $\approx 250$ gradients ($\approx 26$ s) per effective $f_{\rm NL}$ sample at $160^3$**, i.e. 1000
+effective samples in $\approx 7$ GPU-hours, against $\approx 2$ GPU-days with NUTS. The brief's Stage 2 cost targets are met
+(correlation length $\le 10^3$ gradients; production $\ll 1$ GPU-month). Every production run should carry a short NUTS
+reference chain to confirm the MCLMC step.
 
 ## 6. Practical findings
 

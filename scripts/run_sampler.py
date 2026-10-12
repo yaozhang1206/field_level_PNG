@@ -21,30 +21,35 @@ ap.add_argument("--leapfrog", type=int, default=32); ap.add_argument("--fnl_true
 ap.add_argument("--seed", type=int, default=0); ap.add_argument("--tag", default=""); ap.add_argument("--likelihood", default="gaussian")
 ap.add_argument("--max_doublings", type=int, default=8); ap.add_argument("--thin", type=int, default=1)
 ap.add_argument("--bias_prior", type=float, default=0.0, help="Gaussian prior width on b2 and bK about fiducial (0 = flat)")
+ap.add_argument("--sample_bphi", action="store_true", help="free b_phi, b_phidelta per shell with a 40% Gaussian prior")
 ap.add_argument("--mclmc_step_factor", type=float, default=1.0); ap.add_argument("--mclmc_L", type=float, default=None); ap.add_argument("--mclmc_step", type=float, default=None)
 ap.add_argument("--resume", action="store_true", help="continue the chain in results/chain_<tag>.npz (position, step size, mass) without warmup")
 ap.add_argument("--adapt", default="auto", help="window (BlackJAX run, stores warmup) | loop (same adaptation, Python loop, no storage) | dual (identity mass) | auto (loop for res>=160)")
 a = ap.parse_args()
 L = 10000.0
 cosmo, geoms, shells, nz = build()
-lay = ParamLayout(shells)
+lay = ParamLayout(shells, sample_bphi=a.sample_bphi)
 fm = ForwardModel(cosmo, shells, L=L, res=a.res, nz_funcs=nz, ang_mask=dr1_angular_mask(64))
 trs = [t for t in fm.tracers if t in a.tracers]
-tag = a.tag or f"{a.sampler}_res{a.res}_{a.tracers.replace('+','')}{'_linear' if a.linear else ''}{'_bprior%g' % a.bias_prior if a.bias_prior > 0 else ''}{'_sf%g' % a.mclmc_step_factor if a.mclmc_step_factor != 1 else ''}_fnl{a.fnl_true:g}_s{a.seed}"
+tag = a.tag or f"{a.sampler}_res{a.res}_{a.tracers.replace('+','')}{'_linear' if a.linear else ''}{'_bprior%g' % a.bias_prior if a.bias_prior > 0 else ''}{'_bphi' if a.sample_bphi else ''}{'_sf%g' % a.mclmc_step_factor if a.mclmc_step_factor != 1 else ''}_fnl{a.fnl_true:g}_s{a.seed}"
 th_true = lay.fiducial(a.fnl_true)
 eps_true = jax.random.normal(jax.random.PRNGKey(1000 + a.seed), (a.res,) * 3, dtype=jnp.float64)
 prior_sigma = None
-if a.bias_prior > 0:
-    prior_sigma = np.full(lay.n, 1e6); prior_sigma[[i for i, n in enumerate(lay.names) if n.startswith(("b2_", "bK_"))]] = a.bias_prior
+if a.bias_prior > 0 or a.sample_bphi:
+    prior_sigma = np.full(lay.n, 1e6)
+    if a.bias_prior > 0:
+        prior_sigma[[i for i, n in enumerate(lay.names) if n.startswith(("b2_", "bK_"))]] = a.bias_prior
+    if a.sample_bphi:
+        P = lay.prior(0.4); idx = np.where(np.diag(P) > 0)[0]; prior_sigma[idx] = 1.0 / np.sqrt(np.diag(P)[idx])
 post = FieldPosterior(fm, lay, tracers=trs, linear=a.linear, likelihood=a.likelihood, theta_prior_sigma=prior_sigma)
 d = post.mock(eps_true, th_true, seed=a.seed)
 # whitening from the Stage-1 Fisher block at the truth
 ff = FieldFisher(fm, lay, eps_true, th_true, linear=a.linear, tracers=trs, verbose=False); ff.fisher()
 if a.linear:
-    free = np.array([0] + [1 + i * lay.per_shell for i in range(len(shells))])
+    free = np.array([0] + [1 + i * lay.per_shell for i in range(len(shells))] + ([1 + i * lay.per_shell + 3 for i in range(len(shells))] if a.sample_bphi else []))
 else:
-    free = np.array([0] + [1 + i * lay.per_shell + j for i in range(len(shells)) for j in range(3)])
-scale = np.zeros(lay.n); dg = np.diag(ff.F_tt); scale[free] = 1 / np.sqrt(np.maximum(dg[free], 1e-12))
+    free = np.array([0] + [1 + i * lay.per_shell + j for i in range(len(shells)) for j in range(lay.per_shell)])
+scale = np.zeros(lay.n); dg = np.diag(ff.F_tt) + (0 if prior_sigma is None else 1 / prior_sigma ** 2); scale[free] = 1 / np.sqrt(np.maximum(dg[free], 1e-12))
 logdens, unpack = post.make_logdensity(d, theta_scale=scale, free=free)
 st0 = post.pack(eps_true, th_true, scale, free)       # start at the truth (we measure mixing, not burn-in)
 outfile = ROOT / "results" / f"chain_{tag}.npz"

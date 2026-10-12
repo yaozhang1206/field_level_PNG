@@ -246,4 +246,6 @@ i.e. $\bar nP \approx 0.4$–0.7 for QSOs at $z > 2$ and the sample-variance reg
   running. At $80^3$ (step 293) MCLMC agreed with NUTS. Until the bias is controlled, NUTS remains the reference sampler.
 - **MCLMC at $160^3$, step/2** (step 296, $L = 1380$; 60k gradients): mean $-4.2$, std 5.75, ESS 243 — consistent with NUTS
   ($-3.85 \pm 0.4$, $5.6 \pm 0.3$) at 247 gradients per effective sample: 11× NUTS's efficiency and inside the $10^3$ target.
-  Step/4 run pending to confirm convergence.
+  Step/4 (148): mean $-3.5$, std 5.58, ESS 140 — converged at step/2. **Production sampler: MCLMC at half the auto-tuned
+  step** ($\approx 250$ gradients per effective $f_{\rm NL}$ sample at $160^3$, 26 s on one GH200: 1000 effective samples in
+  $\approx 7$ GPU-hours), with a NUTS reference chain for the bias check.
