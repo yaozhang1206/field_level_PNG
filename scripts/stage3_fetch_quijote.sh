@@ -1,0 +1,42 @@
+#!/bin/bash
+# Fetch one batch of Quijote Rockstar catalogues (Globus: Quijote_simulations2 -> NCSA Delta), cut, delete raw.
+#   scripts/stage3_fetch_quijote.sh <set> <snap> <z> <tracer> <id_from> <id_to> [b1_target]
+#   snap: 0=z3 1=z2 2=z1 3=z0.5 4=z0.   Sets: fiducial, fiducial_HR, LC_p, LC_m, ...
+# Raw files land in $RAW/<set>/<i>/out_<snap>_pid.list and are removed after the cut is saved.
+set -e
+SET=$1; SNAP=$2; Z=$3; TRACER=$4; FROM=$5; TO=$6; B1=${7:-}
+Q2=e0eae0aa-5bca-11ea-9683-0e56c063f437
+DELTA=2d66a243-4a3f-4578-9d7f-1935fb5fba8f
+RAW=/work/hdd/bdne/yzhang116/quijote_raw
+OUT=/work/hdd/bdne/yzhang116/quijote_cuts
+cd "$(dirname "$0")/.."
+source env/setup_env.sh >/dev/null 2>&1
+mkdir -p "$RAW/$SET" logs
+BATCH=$(mktemp)
+IDS=""
+for i in $(seq $FROM $TO); do
+  f="$RAW/$SET/$i/out_${SNAP}_pid.list"
+  if [ ! -s "$f" ] && [ ! -f "$OUT/${SET}_z${Z}_${TRACER}/$i.npz" ]; then
+    echo "/Halos/Rockstar/$SET/$i/out_${SNAP}_pid.list $f" >> "$BATCH"
+  fi
+  IDS="$IDS,$i"
+done
+IDS=${IDS#,}
+if [ -s "$BATCH" ]; then
+  echo "transferring $(wc -l < "$BATCH") files for $SET snap $SNAP ids $FROM-$TO"
+  TASK=$(globus transfer "$Q2" "$DELTA" --batch "$BATCH" --label "quijote_${SET}_${SNAP}_${FROM}_${TO}" --jmespath task_id --format unix)
+  echo "task $TASK"
+  globus task wait "$TASK" --timeout 7200 --polling-interval 30
+  globus task show "$TASK" | grep -E "Status|Files|Bytes"
+fi
+rm -f "$BATCH"
+# skip empty (broken) realisations
+GOOD=""
+for i in $(echo $IDS | tr ',' ' '); do
+  f="$RAW/$SET/$i/out_${SNAP}_pid.list"
+  if [ -s "$f" ] || [ -f "$OUT/${SET}_z${Z}_${TRACER}/$i.npz" ]; then GOOD="$GOOD,$i"; else echo "skip $i (empty/missing)"; fi
+done
+GOOD=${GOOD#,}
+python scripts/stage3_cut_quijote.py --in_dir "$RAW/$SET" --pattern "{i}/out_${SNAP}_pid.list" --ids "$GOOD" \
+  --z "$Z" --tracer "$TRACER" --set "$SET" --out_root "$OUT" --delete_raw ${B1:+--b1 $B1} 2>&1 | grep -v -i "cuda\|jax\|Traceback\|File \"\|plugin\|RuntimeError"
+find "$RAW/$SET" -type d -empty -delete 2>/dev/null || true

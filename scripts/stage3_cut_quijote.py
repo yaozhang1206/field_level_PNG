@@ -56,6 +56,8 @@ if mmin is None:
     ths = []
     for i in ids[: a.n_calib]:
         cat = read_catalogue(os.path.join(a.in_dir, a.pattern.format(i=i)))
+        if len(cat["mass"]) == 0:
+            continue
         ths.append(mass_threshold_for_bias(cat, cosmo, a.z, b1_target))
         print(f"calib {i}: M_min = {ths[-1]:.3e}", flush=True)
     mmin = float(np.exp(np.mean(np.log(ths))))
@@ -68,6 +70,8 @@ for i in ids:
         continue
     t = time.time()
     raw = os.path.join(a.in_dir, a.pattern.format(i=i))
+    if not os.path.exists(raw) or os.path.getsize(raw) == 0:
+        print(f"{i}: missing or empty, skipped", flush=True); continue
     cat = read_catalogue(raw)
     N = cut_and_save(cat, mmin, out, meta={"set": a.set, "z": a.z, "tracer": a.tracer, "realisation": i})
     sel = cat["mass"] > mmin

@@ -33,7 +33,21 @@ def quijote_cosmology(sigma8=0.834, backend="class"):
     return Cosmology(dataclasses.replace(base, A_s=A_s), backend=backend)
 
 
-def read_catalogue(path):
+def read_catalogue(path, hosts_only=True):
+    """Read either the compact ASCII format (mass x y z vx vy vz Rs) or a Rockstar out_X[_pid].list file.
+    Rockstar: columns are taken from the header line (Mvir, X, Y, Z, VX, VY, VZ, PID); with hosts_only, keep PID == -1."""
+    with open(path) as f:
+        header = f.readline()
+    if header.startswith("#ID") or "Mvir" in header:
+        names = header.lstrip("#").split()
+        col = {n: i for i, n in enumerate(names)}
+        d = np.loadtxt(path, comments="#")
+        if d.ndim == 1:
+            d = d[None, :]
+        if hosts_only and "PID" in col:
+            d = d[d[:, col["PID"]] < 0]
+        return {"mass": d[:, col["Mvir"]], "pos": d[:, [col["X"], col["Y"], col["Z"]]],
+                "vel": d[:, [col["VX"], col["VY"], col["VZ"]]]}
     d = np.loadtxt(path, comments="#")
     return {"mass": d[:, 0], "pos": d[:, 1:4], "vel": d[:, 4:7]}
 
