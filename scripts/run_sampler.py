@@ -21,6 +21,7 @@ ap.add_argument("--leapfrog", type=int, default=32); ap.add_argument("--fnl_true
 ap.add_argument("--seed", type=int, default=0); ap.add_argument("--tag", default=""); ap.add_argument("--likelihood", default="gaussian")
 ap.add_argument("--max_doublings", type=int, default=8); ap.add_argument("--thin", type=int, default=1)
 ap.add_argument("--bias_prior", type=float, default=0.0, help="Gaussian prior width on b2 and bK about fiducial (0 = flat)")
+ap.add_argument("--mclmc_step_factor", type=float, default=1.0); ap.add_argument("--mclmc_L", type=float, default=None); ap.add_argument("--mclmc_step", type=float, default=None)
 ap.add_argument("--resume", action="store_true", help="continue the chain in results/chain_<tag>.npz (position, step size, mass) without warmup")
 ap.add_argument("--adapt", default="auto", help="window (BlackJAX run, stores warmup) | loop (same adaptation, Python loop, no storage) | dual (identity mass) | auto (loop for res>=160)")
 a = ap.parse_args()
@@ -29,7 +30,7 @@ cosmo, geoms, shells, nz = build()
 lay = ParamLayout(shells)
 fm = ForwardModel(cosmo, shells, L=L, res=a.res, nz_funcs=nz, ang_mask=dr1_angular_mask(64))
 trs = [t for t in fm.tracers if t in a.tracers]
-tag = a.tag or f"{a.sampler}_res{a.res}_{a.tracers.replace('+','')}{'_linear' if a.linear else ''}{'_bprior%g' % a.bias_prior if a.bias_prior > 0 else ''}_fnl{a.fnl_true:g}_s{a.seed}"
+tag = a.tag or f"{a.sampler}_res{a.res}_{a.tracers.replace('+','')}{'_linear' if a.linear else ''}{'_bprior%g' % a.bias_prior if a.bias_prior > 0 else ''}{'_sf%g' % a.mclmc_step_factor if a.mclmc_step_factor != 1 else ''}_fnl{a.fnl_true:g}_s{a.seed}"
 th_true = lay.fiducial(a.fnl_true)
 eps_true = jax.random.normal(jax.random.PRNGKey(1000 + a.seed), (a.res,) * 3, dtype=jnp.float64)
 prior_sigma = None
@@ -84,7 +85,9 @@ elif a.sampler == "nuts":
 elif a.sampler == "hmc":
     out = run_hmc(logdens, st0, n_leapfrog=a.leapfrog, n_warmup=a.n_warmup, n_samples=a.n_samples, seed=a.seed, unpack=unpack, log=log, thin=a.thin, checkpoint=checkpoint)
 else:
-    out = run_mclmc(logdens, st0, n_warmup=a.n_warmup, n_samples=a.n_samples, seed=a.seed, unpack=unpack, log=log, thin=a.thin)
+    out = run_mclmc(logdens, st0, n_warmup=a.n_warmup, n_samples=a.n_samples, seed=a.seed, unpack=unpack, log=log, thin=a.thin,
+                    L_override=a.mclmc_L, step_override=a.mclmc_step, step_factor=a.mclmc_step_factor, checkpoint=checkpoint)
+    run_params = dict(step_size=out["step_size"], imm=out["inverse_mass_matrix"])
 theta_all = out["theta"] if prev is None else np.concatenate([prev["theta"], out["theta"]])
 accept_all = out.get("accept", np.array([])) if prev is None else np.concatenate([prev["accept"], out.get("accept", np.array([]))])
 nsteps_all = out.get("n_steps", np.array([])) if prev is None else np.concatenate([prev["n_steps"], out.get("n_steps", np.array([]))])

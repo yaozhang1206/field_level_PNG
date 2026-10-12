@@ -129,7 +129,9 @@ def _sample(kernel, state, key, n_samples, thin, unpack, record, log, t0, checkp
                 time=time.time() - t0, final_state=state)
 
 
-def run_mclmc(logdensity, state0, n_warmup=1000, n_samples=5000, seed=0, log=print, thin=1, unpack=None, record=None):
+def run_mclmc(logdensity, state0, n_warmup=1000, n_samples=5000, seed=0, log=print, thin=1, unpack=None, record=None,
+              L_override=None, step_override=None, step_factor=1.0, checkpoint=None):
+    """L_override / step_override replace the tuned values; step_factor rescales the tuned step size (bias checks)."""
     """MCLMC (Robnik et al.): adaptation of step size and momentum decoherence length L, then sampling."""
     key = jax.random.PRNGKey(seed)
     key, kw, ks = jax.random.split(key, 3)
@@ -139,8 +141,10 @@ def run_mclmc(logdensity, state0, n_warmup=1000, n_samples=5000, seed=0, log=pri
         logdensity_fn=logdensity, integrator=blackjax.mcmc.integrators.isokinetic_mclachlan, inverse_mass_matrix=inverse_mass_matrix)
     state, params, _ = blackjax.mclmc_find_L_and_step_size(mclmc_kernel=kernel, num_steps=n_warmup, state=init, rng_key=kw,
                                                            diagonal_preconditioning=False)
-    log(f"  mclmc tuning done: L={float(params.L):.2f} step={float(params.step_size):.3e}  {time.time()-t0:.0f}s")
-    sampler = blackjax.mclmc(logdensity, L=params.L, step_size=params.step_size, inverse_mass_matrix=params.inverse_mass_matrix)
+    L = float(params.L) if L_override is None else float(L_override)
+    ss = (float(params.step_size) if step_override is None else float(step_override)) * step_factor
+    log(f"  mclmc tuning done: L={float(params.L):.2f} step={float(params.step_size):.3e}; using L={L:.2f} step={ss:.3e}  {time.time()-t0:.0f}s")
+    sampler = blackjax.mclmc(logdensity, L=L, step_size=ss, inverse_mass_matrix=params.inverse_mass_matrix)
     step = jax.jit(sampler.step)
     thetas, recs = [], []
     for i in range(n_samples * thin):
@@ -152,7 +156,10 @@ def run_mclmc(logdensity, state0, n_warmup=1000, n_samples=5000, seed=0, log=pri
                 recs.append(record(eps, th))
         if (i + 1) % max(1, (n_samples * thin) // 10) == 0:
             log(f"  sample {i+1}/{n_samples*thin}: f_NL = {float(th[0]):.2f}, {time.time()-t0:.0f}s")
-    return dict(theta=np.array(thetas), records=recs, time=time.time() - t0, final_state=state, params=params)
+        if checkpoint is not None and len(thetas) % 5000 == 0 and i % thin == 0:
+            checkpoint(np.array(thetas), np.zeros(len(thetas)), np.ones(len(thetas)), np.asarray(state.position))
+    return dict(theta=np.array(thetas), records=recs, time=time.time() - t0, final_state=state, params=params,
+                step_size=ss, inverse_mass_matrix=np.asarray(params.inverse_mass_matrix), L=L)
 
 
 # ---- diagnostics ---------------------------------------------------------------------------------

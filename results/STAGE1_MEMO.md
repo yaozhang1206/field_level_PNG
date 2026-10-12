@@ -240,3 +240,7 @@ i.e. $\bar nP \approx 0.4$–0.7 for QSOs at $z > 2$ and the sample-variance reg
   within chain noise). MCLMC is 12× more efficient per gradient; its unadjusted-integrator bias needs a step-size
   convergence check before production. The brief's Stage-2 target ($\le 10^3$ gradients per independent $f_{\rm NL}$) is met
   by MCLMC with a factor 7 to spare.
+- **MCLMC at $160^3$** (tuned with 300 steps: $L = 1380$, step 592; 60k gradients, 107 min): ESS 632 (95 gradients per
+  effective sample) but **biased**: mean $-16.7$ vs $-3.85 \pm 0.4$ from two NUTS chains on the same mock, std 4.4 vs 5.6.
+  The unadjusted integrator at this step size is not accurate; step-size convergence runs (step/2, step/4, fixed $L$) are
+  running. At $80^3$ (step 293) MCLMC agreed with NUTS. Until the bias is controlled, NUTS remains the reference sampler.
