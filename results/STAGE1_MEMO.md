@@ -255,3 +255,9 @@ i.e. $\bar nP \approx 0.4$–0.7 for QSOs at $z > 2$ and the sample-variance reg
   mean $-4.1$ (same mock as the $b_\phi$-fixed chains: 5.6 ± 0.3, means $-3.85$). This is the brief's go/no-go configuration
   ($k_{\max} = 0.1$, bias marginalised, $b_\phi$ sampled): $6.0$ sits between the "go" ($\lesssim 5$) and "reframe" ($\gtrsim 7$)
   branches, a 35 % improvement over the DESI DR1 $P(k)$ result (9.2). Single fiducial field; the second-mock chain measures the scatter.
+- **Second mock at $160^3$** (seed 1; NUTS depth 8, 1500 samples, $\tau = 17$, ESS 87, 5.8 h): $\sigma(f_{\rm NL}) = 7.1 \pm 0.5$ with
+  $b_\phi$ fixed, mean $-4.8$, against $5.6 \pm 0.3$ on mock 0 (a $2.4\sigma$ difference). Two-mock average $6.3$ with a
+  mock-to-mock scatter of $\approx 15$ %, larger than the 10 % seen at $80^3$ (7.0–7.2 vs 7.5). With the measured $b_\phi$ penalty
+  ($\times 1.08$) the go/no-go configuration is **$\sigma(f_{\rm NL}) \approx 6.0$–$7.6$ depending on the fiducial field, central
+  value $\approx 6.8$**: between the brief's branches, and at or just above the project's final target of 6. More mocks are needed
+  before quoting a single number; the sampler cost (MCLMC) makes $\sim 5$ mocks a few GPU-days.

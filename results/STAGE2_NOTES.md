@@ -70,6 +70,7 @@ DR1 window, QSO+LRG, six shells, $f_{\rm NL,true} = 0$, $b_\phi$ fixed; ± is th
 | $160^3$ | 0 | full, resumed chain (4 sessions) | 3300 | 5.7 ± 0.4 | 24 / 10.5 (depth 7 / 8) | 166 |
 | $160^3$ | 0 | full, independent chain | 1200 | 4.8 ± 0.6 | 40 | 30 |
 | $160^3$ | 0 | **full, pooled** | 4500 | **5.6 ± 0.3** | | 171 |
+| $160^3$ | 1 | full (NUTS depth 8) | 1500 | 7.1 ± 0.5 | 17 | 87 |
 
 **Result.** At the DR1 configuration the full model gains only 0–10 % over the two-point posterior at $80^3$ and $\approx 14$ %
 at $160^3$, against 36–50 % predicted by the linearised Fisher. The field-level forecast for DR1 QSO+LRG at $k_{\max} = 0.1$ is
@@ -77,6 +78,12 @@ $\sigma(f_{\rm NL}) = 5.6 \pm 0.3$ with $b_\phi$ fixed and $\approx 6.8$ with th
 improvement over the DESI DR1 $P(k)$ result (9.2), not the factor two of the Stage 1 Fisher, and above the $\lesssim 5$
 threshold. Priors of width 2 on $b_2$, $b_K$ do not change the width, so the broad flat-prior directions in the QSO shells are
 not the limitation.
+
+**Fiducial-field scatter.** The second $160^3$ mock gives $7.1 \pm 0.5$ against $5.6 \pm 0.3$ for mock 0 (mean $-4.8$ vs $-3.85$),
+a $2.4\sigma$ difference and a mock-to-mock scatter of $\approx 15$ % in the width (10 % at $80^3$). The two-mock average with
+$b_\phi$ fixed is $6.3$; with the $\times 1.08$ $b_\phi$ penalty, $\approx 6.8$. The single-mock 6.0 quoted in §8 is therefore the
+optimistic end of a $6.0$–$7.6$ range; the Stage 2 forecast for the go/no-go configuration is $\sigma(f_{\rm NL}) \approx 6.8 \pm 0.8$
+(scatter over fiducial fields) until more mocks are run.
 
 Interpretation of the box–DR1 difference: the coupling information is a modulation of small-scale power by the large-scale
 potential, usable only where that large-scale field is itself well measured. In a periodic box with uniform $\bar n$ it is;
@@ -114,8 +121,7 @@ reference chain to confirm the MCLMC step.
 
 ## 7. Open items
 
-- MCLMC step-size convergence at $160^3$ (running); then the production sampler decision.
-- Second mock at $160^3$ (queued) to measure the fiducial-field scatter of the width (10 % at $80^3$).
+- More mocks at $160^3$: two give widths 5.6 and 7.1 (15 % scatter); $\sim 5$ MCLMC chains ($\approx 2$ GPU-h each) would pin the mean to 5 %.
 - $b_\phi$, $b_{\phi\delta}$ sampled with the 40 % prior at a non-zero fiducial $f_{\rm NL}$.
 - Poisson likelihood check at $160^3$ (6 QSOs per voxel).
 - Stage 3 (model mismatch on N-body halo catalogues) and Stage 4 (systematics) are untouched.
@@ -128,4 +134,5 @@ a factor 1.13 (the Stage 1 propagation $f_{\rm NL} = A/b_\phi$ assumed 1.22). Ap
 
 At $160^3$ with $b_\phi$, $b_{\phi\delta}$ sampled (MCLMC step/2, ESS 252): $\sigma(f_{\rm NL}) = 6.0 \pm 0.3$ (× 1.08 over $b_\phi$ fixed).
 **Stage 2 result for the brief's go/no-go configuration: $\sigma(f_{\rm NL}) = 6.0 \pm 0.3$ on one DR1 mock**, versus 9.2 for the
-DESI DR1 $P(k)$ analysis and 4.0 from the Stage 1 linearised Fisher.
+DESI DR1 $P(k)$ analysis and 4.0 from the Stage 1 linearised Fisher. Including the second mock (§4), the two-mock estimate is
+$\approx 6.8$ with a fiducial-field scatter of $\approx 0.8$.
