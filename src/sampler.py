@@ -56,7 +56,8 @@ def run_nuts_da(logdensity, state0, n_warmup=200, n_samples=1000, seed=0, target
 
 
 def run_nuts_window_loop(logdensity, state0, n_warmup=200, n_samples=1000, seed=0, target_accept=0.8, max_doublings=7,
-                         log=print, thin=1, unpack=None, record=None, checkpoint=None, step_size0=0.02):
+                         log=print, thin=1, unpack=None, record=None, checkpoint=None, step_size0=0.02, resume=None):
+    """resume: dict(position, step_size, inverse_mass_matrix) to continue a chain without warmup."""
     """Stan-style window adaptation (diagonal mass + dual-averaging step size) run as a Python loop so that no
     warmup positions are stored (BlackJAX's window_adaptation.run keeps all of them: 6.5 GB at 160^3)."""
     from blackjax.adaptation.window_adaptation import base, build_schedule
@@ -66,6 +67,14 @@ def run_nuts_window_loop(logdensity, state0, n_warmup=200, n_samples=1000, seed=
     step = jax.jit(lambda k, st, ss, imm: kernel_fn(k, st, logdensity, ss, imm, max_num_doublings=max_doublings))
     a_init, a_update, a_final = base(is_mass_matrix_diagonal=True, target_acceptance_rate=target_accept)
     a_update = jax.jit(a_update)
+    if resume is not None:
+        state = blackjax.nuts.init(jnp.asarray(resume["position"]), logdensity)
+        ss, imm = float(resume["step_size"]), jnp.asarray(resume["inverse_mass_matrix"])
+        log(f"  resumed: step size {ss:.3e}, no warmup")
+        kernel = jax.jit(lambda k, st: step(k, st, ss, imm))
+        out = _sample(kernel, state, jax.random.PRNGKey(seed + 7919), n_samples, thin, unpack, record, log, t0, checkpoint)
+        out["step_size"], out["inverse_mass_matrix"] = ss, np.asarray(imm)
+        return out
     state = blackjax.nuts.init(state0, logdensity)
     astate = a_init(state.position, step_size0)
     schedule = build_schedule(n_warmup)
@@ -79,7 +88,9 @@ def run_nuts_window_loop(logdensity, state0, n_warmup=200, n_samples=1000, seed=
     ss, imm = a_final(astate)
     log(f"  warmup done: step size {float(ss):.3e}, inv. mass range [{float(imm.min()):.2e}, {float(imm.max()):.2e}]  {time.time()-t0:.0f}s")
     kernel = jax.jit(lambda k, st: step(k, st, ss, imm))
-    return _sample(kernel, state, key, n_samples, thin, unpack, record, log, t0, checkpoint)
+    out = _sample(kernel, state, key, n_samples, thin, unpack, record, log, t0, checkpoint)
+    out["step_size"], out["inverse_mass_matrix"] = float(ss), np.asarray(imm)
+    return out
 
 
 def run_hmc(logdensity, state0, n_leapfrog=32, n_warmup=200, n_samples=1000, seed=0, target_accept=0.8,
@@ -113,7 +124,7 @@ def _sample(kernel, state, key, n_samples, thin, unpack, record, log, t0, checkp
             log(f"  sample {i+1}/{n_samples*thin}: f_NL = {float(th[0]):.2f}, accept {np.nanmean(accept[-50:]):.2f}, "
                 f"mean leapfrog {np.mean(nsteps[-50:]):.0f}, {time.time()-t0:.0f}s")
         if checkpoint is not None and len(thetas) % 250 == 0 and i % thin == 0:
-            checkpoint(np.array(thetas), np.array(accept), np.array(nsteps))
+            checkpoint(np.array(thetas), np.array(accept), np.array(nsteps), np.asarray(state.position))
     return dict(theta=np.array(thetas), records=recs, accept=np.array(accept), n_steps=np.array(nsteps),
                 time=time.time() - t0, final_state=state)
 
