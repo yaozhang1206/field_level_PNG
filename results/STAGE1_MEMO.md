@@ -244,3 +244,6 @@ i.e. $\bar nP \approx 0.4$–0.7 for QSOs at $z > 2$ and the sample-variance reg
   effective sample) but **biased**: mean $-16.7$ vs $-3.85 \pm 0.4$ from two NUTS chains on the same mock, std 4.4 vs 5.6.
   The unadjusted integrator at this step size is not accurate; step-size convergence runs (step/2, step/4, fixed $L$) are
   running. At $80^3$ (step 293) MCLMC agreed with NUTS. Until the bias is controlled, NUTS remains the reference sampler.
+- **MCLMC at $160^3$, step/2** (step 296, $L = 1380$; 60k gradients): mean $-4.2$, std 5.75, ESS 243 — consistent with NUTS
+  ($-3.85 \pm 0.4$, $5.6 \pm 0.3$) at 247 gradients per effective sample: 11× NUTS's efficiency and inside the $10^3$ target.
+  Step/4 run pending to confirm convergence.

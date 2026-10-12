@@ -91,7 +91,8 @@ them fixed at the fiducial. A masked $16^3$ box test was attempted but is inconc
 | NUTS, window-adapted, depth 8 | $80^3$ full | $1.6\times10^3$ | 13 s | 255 leapfrog, $\tau$ 4–6 |
 | NUTS, depth 7 / 8 | $160^3$ full | $3.0 / 2.7\times10^3$ | 190 / 170 s | 127 / 255 leapfrog, $\tau$ 24 / 10.5 |
 | MCLMC (tuned $L$, step) | $80^3$ full | $1.4\times10^2$ | 2.7 s | posterior consistent with NUTS (std 7.4 vs 7.0–7.2) |
-| MCLMC (300-step tuning) | $160^3$ full | $0.95\times10^2$ | 10 s | **biased**: mean $-16.7$ vs $-3.85 \pm 0.4$, std 4.4 vs 5.6 |
+| MCLMC (300-step tuning, step 592) | $160^3$ full | $0.95\times10^2$ | 10 s | **biased**: mean $-16.7$ vs $-3.85 \pm 0.4$, std 4.4 vs 5.6 |
+| MCLMC, step/2 (296), same $L$ | $160^3$ full | $2.5\times10^2$ | 26 s | mean $-4.2$, std 5.75: consistent with NUTS |
 
 NUTS misses the brief's $10^3$-gradient target by a factor 2–3 at $160^3$; MCLMC beats it by a factor 10 but at $160^3$ its
 unadjusted integrator is inaccurate at the tuned step. Step-size convergence runs (step/2, step/4 at fixed $L$) are in
