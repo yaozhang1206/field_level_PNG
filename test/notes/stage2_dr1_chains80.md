@@ -12,7 +12,7 @@ Fisher column: exact-marginal Fisher (Hutchinson) of Stage 1 for the correspondi
 | seed 1, linear | 3000 | 7.45 ± 0.28 | -1.9 | 8.4 | 358 | 63 | 8.28 |
 | seed 1, full 2LPT | 2500 | 7.51 ± 0.20 | -6.0 | 3.4 | 730 | 255 | 5.32 |
 
-Result: at DR1 scale the full 2LPT model gives $\sigma(f_{\rm NL}) = 7.0$–7.5, a gain of $\lesssim 10$ % over the two-point (linear)
+Result: at DR1 scale the full 2LPT model gives $\sigma(f_{\rm NL}) = 7.0$–7.5 at $80^3$ and $5.5 \pm 0.4$ at $160^3$ (linear 6.5), a gain of 10–16 %
 posterior, versus 36 % predicted by the linearised Fisher and 23–30 % realised in periodic boxes. With the 40 % $b_\phi$ prior
 propagated ($\times1.22$): $\approx 8.5$–9. Mixing: $\tau_{\rm int} = 3$–11 samples; 2 s per sample (255 leapfrog × 14 ms) on one GH200.
 

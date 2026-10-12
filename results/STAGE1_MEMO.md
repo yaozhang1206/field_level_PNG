@@ -225,3 +225,7 @@ i.e. $\bar nP \approx 0.4$–0.7 for QSOs at $z > 2$ and the sample-variance reg
   **DR1 $80^3$ field-level result: $\sigma(f_{\rm NL}) \approx 7.0$–7.5** ($b_\phi$ fixed), $\approx 8.5$–9 with the 40 % $b_\phi$ prior.
 - **$160^3$, linear model, DR1 window**: $\sigma(f_{\rm NL}) = 6.5 \pm 0.2$ (3000 samples, $\tau = 4$, 4 ms per gradient, 127 leapfrog
   steps per sample) vs 7.8 at $80^3$. Two-point information alone reaches 6.5 at $k_{\max} = 0.1$; the full-model $160^3$ chain is running.
+- **$160^3$, full 2LPT model, DR1 window** (1800 samples over two resumed sessions, $\tau \approx 22$, ESS 79):
+  $\sigma(f_{\rm NL}) = 5.5 \pm 0.4$ vs linear 6.5 ± 0.2: a 16 % gain at $k_{\max} = 0.1$ (10 % at $80^3$). With the 40 %
+  $b_\phi$ prior propagated: $\approx 6.7$. Cost at $160^3$: 63 ms per gradient, 127 leapfrog steps, 6.5 s per sample,
+  $\sim 150$ s per independent $f_{\rm NL}$ sample on one GH200 ($\approx 2$ GPU-days for 1000 effective samples).
