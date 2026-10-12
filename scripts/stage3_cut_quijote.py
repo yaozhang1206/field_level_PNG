@@ -36,6 +36,7 @@ ap.add_argument("--z", type=float, required=True)
 ap.add_argument("--b1", type=float, default=None, help="target linear bias (DESI b1(z) if omitted: --tracer)")
 ap.add_argument("--tracer", default="LRG", choices=["LRG", "QSO"])
 ap.add_argument("--set", default="CV")
+ap.add_argument("--tag", default=None, help="output dir suffix (default: tracer)")
 ap.add_argument("--out_root", default="/work/hdd/bdne/yzhang116/quijote_cuts")
 ap.add_argument("--mmin", type=float, default=None)
 ap.add_argument("--n_calib", type=int, default=3)
@@ -46,7 +47,7 @@ B1 = {"LRG": (0.209, 1.415), "QSO": (0.237, 0.771)}
 b1_target = a.b1 if a.b1 is not None else B1[a.tracer][0] * (1 + a.z) ** 2 + B1[a.tracer][1]
 cosmo = quijote_cosmology()
 ids = parse_ids(a.ids)
-out_dir = os.path.join(a.out_root, f"{a.set}_z{a.z:g}_{a.tracer}")
+out_dir = os.path.join(a.out_root, f"{a.set}_z{a.z:g}_{a.tag or a.tracer}")
 os.makedirs(out_dir, exist_ok=True)
 summary_path = os.path.join(out_dir, "summary.json")
 summary = json.load(open(summary_path)) if os.path.exists(summary_path) else {"realisations": {}}
