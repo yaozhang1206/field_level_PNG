@@ -214,3 +214,9 @@ i.e. $\bar nP \approx 0.4$–0.7 for QSOs at $z > 2$ and the sample-variance reg
   those large-scale modes are themselves well constrained; the DR1 window removes exactly those modes, while the
   linearised Fisher holds them fixed at the fiducial. Long chains (2500 samples, second mock, $160^3$) are queued to
   confirm. If confirmed, the realistic DR1 forecast is $\sigma \approx 7$–8 and the brief's reframing branch applies.
+- **Long chain, same mock** (3000 samples, ESS 472): full 2LPT model $\sigma(f_{\rm NL}) = 6.97 \pm 0.23$ vs linear $7.77 \pm 0.34$:
+  a 10 % gain in $\sigma$ at DR1 $80^3$, against 23–30 % in the periodic boxes and 36 % from the linearised Fisher.
+  Per-shell $b_2$, $b_K$ are poorly constrained with flat priors in the QSO shells ($\sigma(b_K)$ up to 21); a chain with
+  Gaussian priors of width 2 on $b_2$, $b_K$ is running to see how much of the remaining gap is prior volume.
+  Mixing: $\tau_{\rm int}(f_{\rm NL}) = 6$–11 samples at 255 leapfrog steps, i.e. $\sim 2\times10^3$ gradient evaluations per
+  independent $f_{\rm NL}$ sample, 2 s per sample at $80^3$ on one GH200 (0.014 s per gradient).

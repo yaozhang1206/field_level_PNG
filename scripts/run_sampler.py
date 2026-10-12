@@ -20,16 +20,20 @@ ap.add_argument("--n_warmup", type=int, default=300); ap.add_argument("--n_sampl
 ap.add_argument("--leapfrog", type=int, default=32); ap.add_argument("--fnl_true", type=float, default=0.0)
 ap.add_argument("--seed", type=int, default=0); ap.add_argument("--tag", default=""); ap.add_argument("--likelihood", default="gaussian")
 ap.add_argument("--max_doublings", type=int, default=8); ap.add_argument("--thin", type=int, default=1)
+ap.add_argument("--bias_prior", type=float, default=0.0, help="Gaussian prior width on b2 and bK about fiducial (0 = flat)")
 a = ap.parse_args()
 L = 10000.0
 cosmo, geoms, shells, nz = build()
 lay = ParamLayout(shells)
 fm = ForwardModel(cosmo, shells, L=L, res=a.res, nz_funcs=nz, ang_mask=dr1_angular_mask(64))
 trs = [t for t in fm.tracers if t in a.tracers]
-tag = a.tag or f"{a.sampler}_res{a.res}_{a.tracers.replace('+','')}{'_linear' if a.linear else ''}_fnl{a.fnl_true:g}_s{a.seed}"
+tag = a.tag or f"{a.sampler}_res{a.res}_{a.tracers.replace('+','')}{'_linear' if a.linear else ''}{'_bprior%g' % a.bias_prior if a.bias_prior > 0 else ''}_fnl{a.fnl_true:g}_s{a.seed}"
 th_true = lay.fiducial(a.fnl_true)
 eps_true = jax.random.normal(jax.random.PRNGKey(1000 + a.seed), (a.res,) * 3, dtype=jnp.float64)
-post = FieldPosterior(fm, lay, tracers=trs, linear=a.linear, likelihood=a.likelihood)
+prior_sigma = None
+if a.bias_prior > 0:
+    prior_sigma = np.full(lay.n, 1e6); prior_sigma[[i for i, n in enumerate(lay.names) if n.startswith(("b2_", "bK_"))]] = a.bias_prior
+post = FieldPosterior(fm, lay, tracers=trs, linear=a.linear, likelihood=a.likelihood, theta_prior_sigma=prior_sigma)
 d = post.mock(eps_true, th_true, seed=a.seed)
 # whitening from the Stage-1 Fisher block at the truth
 ff = FieldFisher(fm, lay, eps_true, th_true, linear=a.linear, tracers=trs, verbose=False); ff.fisher()
