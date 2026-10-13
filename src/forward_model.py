@@ -120,12 +120,22 @@ class ParamLayout:
         return P
 
 
-def fourier_downsample(rho_fine, r):
-    """Truncate a fine periodic field to the modes of an r^3 grid (|n_i| < r/2) and sample it at the coarse nodes."""
+def cic_window(r, n):
+    """CIC assignment window on an n^3 mesh at the kept modes of an r^3 grid, shape (r-1, r-1, r/2)."""
+    keep = np.array([i for i in range(r) if i != r // 2]); m = np.where(keep < r // 2, keep, keep - r)
+    s = np.sinc(m / n) ** 2; sz = np.sinc(np.arange(r // 2) / n) ** 2
+    return s[:, None, None] * s[None, :, None] * sz[None, None, :]
+
+
+def fourier_downsample(rho_fine, r, deconvolve=True):
+    """Truncate a fine periodic field to the modes of an r^3 grid (|n_i| < r/2) and sample it at the coarse nodes;
+    deconvolve: divide the kept modes by the fine-mesh CIC window (removes the mesh-factor dependence)."""
     n = rho_fine.shape[0]
     f = jnp.fft.rfftn(rho_fine)
     keep = np.array([i for i in range(r) if i != r // 2]); src = np.where(keep < r // 2, keep, keep - r) % n
     sub = f[src][:, src][:, :, : r // 2]
+    if deconvolve:
+        sub = sub / jnp.asarray(cic_window(r, n))
     out = jnp.zeros((r, r, r // 2 + 1), dtype=f.dtype).at[keep[:, None, None], keep[None, :, None], np.arange(r // 2)[None, None, :]].set(sub)
     return jnp.fft.irfftn(out, s=(r, r, r)) * (r / n) ** 3
 
@@ -137,7 +147,7 @@ class ForwardModel:
     def __init__(self, cosmo: Cosmology, shells: list[Shell], L: float = 10000.0, res: int = 80,
                  nz_funcs: dict | None = None, ang_mask=None, mask_nside: int = 64, n_order: int = 2,
                  worder: int = 2, precision: str = "double", observer=None, requires_jacfwd: bool = False,
-                 oversample: int = 1, down: str = "fourier"):
+                 oversample: int = 1, down: str = "fourier", mesh_oversample: int | None = None):
         """
         nz_funcs: {tracer: callable z -> observed density (h/Mpc)^3}
         ang_mask: HEALPix map (nside=mask_nside, RING) of fractional coverage in [0,1]
@@ -174,6 +184,8 @@ class ForwardModel:
         # particle lattice (fine when oversampled)
         self.os = int(oversample)
         self.down = down
+        self.mos = int(mesh_oversample) if mesh_oversample else self.os   # assignment mesh = mos * res (>= particle lattice)
+        self.rm = self.res * self.mos
         self.rp = self.res * self.os
         if self.os > 1:
             self.djp = DiscoDJ(dim=3, res=self.rp, boxsize=L, precision=precision,
@@ -313,12 +325,13 @@ class ForwardModel:
 
     def scatter(self, pos, w):
         from discodj.core.scatter_and_gather import scatter
-        mesh = jnp.zeros((self.rp,) * 3, dtype=self.dtype)
+        mesh = jnp.zeros((self.rm,) * 3, dtype=self.dtype)
         n = self.rp ** 3
-        rho = scatter(mesh, pos.reshape(n, 3), n_part_tot=n, res=self.rp, boxsize=self.L,
+        rho = scatter(mesh, pos.reshape(n, 3), n_part_tot=n, res=self.rm, boxsize=self.L,
                       dtype_num=64 if self.dtype == jnp.float64 else 32, weight=w.reshape(n, 1),
                       worder=self.worder, requires_jacfwd=self.requires_jacfwd)
-        if self.os == 1:
+        rho = rho * (self.rm / self.rp) ** 3            # mean 1 on the assignment mesh
+        if self.mos == 1:
             return rho
         return self.downsample(rho)
 
@@ -326,7 +339,7 @@ class ForwardModel:
         """Fine mesh -> res^3 data grid. 'fourier': keep the coarse-grid Fourier modes (Nyquist planes dropped) and
         sample at the coarse nodes, an orthogonal projection, so unresolved small-scale power does not alias into the
         analysis grid and white noise stays white; 'block': cell average (NGP-equivalent window, aliases)."""
-        r, o = self.res, self.os
+        r, o = self.res, self.mos
         if getattr(self, "down", "fourier") == "block":
             return rho_fine.reshape(r, o, r, o, r, o).mean(axis=(1, 3, 5))
         return fourier_downsample(rho_fine, r)

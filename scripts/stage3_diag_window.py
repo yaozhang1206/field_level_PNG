@@ -46,14 +46,14 @@ for rsd in (False, True):
         Pd.append(pk(fourier_grid(pos, L, res, 4)) - shot)
     rows[("data", rsd)] = np.mean(Pd, 0) / Plin
     nbar = np.mean([summ["realisations"][str(i)]["n"] for i in ids])
-    for os_ in (4,):
+    for os_, mos_ in ((1, 2), (1, 4), (2, 2), (2, 4), (4, 4)):
         sh = default_shell("LRG", z, z, b1, a.p)
-        fm = ForwardModel(c, [sh], L=L, res=res, nz_funcs={"LRG": lambda zz: np.full_like(zz, nbar)}, observer=[L / 2, L / 2, -200 * L], oversample=os_)
+        fm = ForwardModel(c, [sh], L=L, res=res, nz_funcs={"LRG": lambda zz: np.full_like(zz, nbar)}, observer=[L / 2, L / 2, -200 * L], oversample=os_, mesh_oversample=mos_)
         fm.nbar_cell[0] = jnp.full((res,) * 3, nbar * fm.V_cell); fm.footprint = {"LRG": np.ones((res,) * 3, bool)}
         lay = ParamLayout([sh]); th = lay.fiducial(0.0)
         f = jax.jit(lambda e: fm(e, th, lay, rsd)["LRG"])
         Pm = [pk(np.asarray(f(jax.random.normal(jax.random.PRNGKey(s), (res,) * 3, dtype=jnp.float64)))) for s in range(16)]
-        rows[(f"model os={os_}", rsd)] = np.mean(Pm, 0) / Plin
+        rows[(f"model p{os_}m{mos_}", rsd)] = np.mean(Pm, 0) / Plin
     print(f"--- {'redshift' if rsd else 'real'} space: raw grid P / P_lin (b1^2 = {b1**2:.2f}); data NGP-gridded, shot-noise subtracted")
     print("k      " + "  ".join(f"{kk:.3f}" for kk in kc))
     for key, v in rows.items():

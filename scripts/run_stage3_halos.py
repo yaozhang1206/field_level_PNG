@@ -36,7 +36,8 @@ ap.add_argument("--sample", required=True)
 ap.add_argument("--cuts_root", default="/work/hdd/bdne/yzhang116/quijote_cuts")
 ap.add_argument("--ids", default="0-9")
 ap.add_argument("--res", type=int, default=16)
-ap.add_argument("--oversample", type=int, default=4)
+ap.add_argument("--oversample", type=int, default=1, help="particle lattice factor")
+ap.add_argument("--mesh_oversample", type=int, default=4, help="assignment mesh factor")
 ap.add_argument("--n_order", type=int, default=2)
 ap.add_argument("--rsd", action="store_true")
 ap.add_argument("--lap", action="store_true")
@@ -55,6 +56,7 @@ ap.add_argument("--fnl_mock", type=float, default=0.0)
 ap.add_argument("--tag", default="")
 ap.add_argument("--seed", type=int, default=0)
 a = ap.parse_args()
+mos = a.mesh_oversample
 
 
 def parse_ids(s):
@@ -73,7 +75,7 @@ z = float(summary["z"])
 tracer = summary.get("tracer", "LRG")
 tracer = tracer if tracer in ("LRG", "QSO") else "LRG"
 p = a.p if a.p is not None else {"LRG": 1.0, "QSO": 1.6}[tracer]
-tag = (f"res{a.res}_os{a.oversample}f_lpt{a.n_order}" + ("_rsd" if a.rsd else "") + ("_lap" if a.lap else "")
+tag = (f"res{a.res}_p{a.oversample}m{mos}d_lpt{a.n_order}" + ("_rsd" if a.rsd else "") + ("_lap" if a.lap else "")
        + ("_noise" if a.sample_noise else "") + ("_bphi" if a.sample_bphi else "") + f"_p{p:g}"
        + (f"_M{a.mmin:.0e}" if a.mmin else "") + (f"_mock{a.fnl_mock:g}" if a.mock else "") + (f"_{a.tag}" if a.tag else ""))
 os.makedirs(os.path.join(ROOT, "results", "stage3"), exist_ok=True)
@@ -89,7 +91,8 @@ b1_mean = float(np.mean([r["b1"] for r in summary["realisations"].values()]))
 nbar_mean = float(np.mean([r["n"] for r in summary["realisations"].values()]))
 shell = default_shell(tracer, z, z, b1_mean, p)
 fm = ForwardModel(cosmo, [shell], L=L, res=res, nz_funcs={tracer: lambda zz: np.full_like(zz, nbar_mean)},
-                  ang_mask=None, n_order=a.n_order, observer=[L / 2, L / 2, -200 * L], oversample=a.oversample)
+                  ang_mask=None, n_order=a.n_order, observer=[L / 2, L / 2, -200 * L], oversample=a.oversample,
+                  mesh_oversample=mos)
 fm.footprint = {tracer: np.ones((res,) * 3, bool)}
 fm.nbar_cell[0] = jnp.full((res,) * 3, nbar_mean * fm.V_cell)
 lay = ParamLayout([shell], sample_bphi=a.sample_bphi, lap=a.lap)
@@ -138,7 +141,7 @@ for i in ids:
     else:
         if a.rsd:
             pos = redshift_space(pos, vel, z, cosmo, L, axis=2)
-        grid = fourier_grid(pos, L, res, a.oversample) if a.oversample > 1 else cic_mesh(pos, L, res)
+        grid = fourier_grid(pos, L, res, mos) if mos > 1 else cic_mesh(pos, L, res)
         assert abs(grid.mean() / (nbar * fm.V_cell) - 1) < 1e-6, f"data mean {grid.mean()} != nbar V {nbar * fm.V_cell}"
         data = jnp.asarray(grid.ravel())
     # cold start

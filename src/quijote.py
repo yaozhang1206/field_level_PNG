@@ -68,7 +68,8 @@ def fourier_grid(pos, L, res, oversample=4):
     f = np.fft.rfftn(fine)
     keep = np.array([i for i in range(res) if i != res // 2]); src = np.where(keep < res // 2, keep, keep - res) % rf
     out = np.zeros((res, res, res // 2 + 1), dtype=complex)
-    out[np.ix_(keep, keep, np.arange(res // 2))] = f[np.ix_(src, src, np.arange(res // 2))]
+    from forward_model import cic_window
+    out[np.ix_(keep, keep, np.arange(res // 2))] = f[np.ix_(src, src, np.arange(res // 2))] / cic_window(res, rf)
     return np.fft.irfftn(out, s=(res,) * 3)          # counts per coarse cell (fine counts summed: x (rf/res)^3 (res/rf)^3)
 
 
