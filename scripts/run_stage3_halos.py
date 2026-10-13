@@ -5,8 +5,8 @@
         -> results/stage3/<sample>_<tag>.json (one entry per realisation, appended / resumable)
 
 Per realisation (periodic 1 Gpc/h box, one shell at the catalogue redshift, uniform nbar = N / L^3):
-  data   halo counts on the res^3 grid: NGP aligned with the model's block-averaged fine lattice (oversample > 1),
-         or CIC (oversample = 1, the Stage 1-2 lattice model); redshift space along z with the halo velocities (--rsd).
+  data   halo counts: CIC on the fine (oversample*res)^3 mesh truncated to the res^3 grid's Fourier modes (the same
+         operation as the model's downsampling; oversample > 1), or CIC on res^3 (oversample = 1, the Stage 1-2 model); redshift space along z with the halo velocities (--rsd).
   model  the DR1 forward model (DISCO-DJ nLPT, Lagrangian bias b1, b2, bK, local PNG with b_phi, b_phidelta from the
          DR1 p value, Kaiser RSD) + optional Laplacian bias b_nabla (--lap); Gaussian likelihood with variance
          A * nbar V_cell, ln A sampled with a flat prior (--sample_noise) or A = 1.
@@ -25,7 +25,7 @@ ROOT = os.path.join(os.path.dirname(__file__), "..")
 sys.path.insert(0, os.path.join(ROOT, "src"))
 import jax  # noqa: E402
 import jax.numpy as jnp  # noqa: E402
-from quijote import quijote_cosmology, cic_mesh, ngp_mesh, redshift_space, linear_bias, L_QUIJOTE  # noqa: E402
+from quijote import quijote_cosmology, cic_mesh, fourier_grid, redshift_space, linear_bias, L_QUIJOTE  # noqa: E402
 from forward_model import ForwardModel, ParamLayout, default_shell  # noqa: E402
 from posterior import FieldPosterior  # noqa: E402
 from fisher_field import FieldFisher  # noqa: E402
@@ -73,7 +73,7 @@ z = float(summary["z"])
 tracer = summary.get("tracer", "LRG")
 tracer = tracer if tracer in ("LRG", "QSO") else "LRG"
 p = a.p if a.p is not None else {"LRG": 1.0, "QSO": 1.6}[tracer]
-tag = (f"res{a.res}_os{a.oversample}_lpt{a.n_order}" + ("_rsd" if a.rsd else "") + ("_lap" if a.lap else "")
+tag = (f"res{a.res}_os{a.oversample}f_lpt{a.n_order}" + ("_rsd" if a.rsd else "") + ("_lap" if a.lap else "")
        + ("_noise" if a.sample_noise else "") + ("_bphi" if a.sample_bphi else "") + f"_p{p:g}"
        + (f"_M{a.mmin:.0e}" if a.mmin else "") + (f"_mock{a.fnl_mock:g}" if a.mock else "") + (f"_{a.tag}" if a.tag else ""))
 os.makedirs(os.path.join(ROOT, "results", "stage3"), exist_ok=True)
@@ -138,7 +138,7 @@ for i in ids:
     else:
         if a.rsd:
             pos = redshift_space(pos, vel, z, cosmo, L, axis=2)
-        grid = ngp_mesh(pos, L, res, shift=L / (2 * a.oversample * res)) if a.oversample > 1 else cic_mesh(pos, L, res)
+        grid = fourier_grid(pos, L, res, a.oversample) if a.oversample > 1 else cic_mesh(pos, L, res)
         data = jnp.asarray(grid.ravel())
     # cold start
     s0 = default_shell(tracer, z, z, b1_pk, p)

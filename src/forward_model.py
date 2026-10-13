@@ -120,6 +120,16 @@ class ParamLayout:
         return P
 
 
+def fourier_downsample(rho_fine, r):
+    """Truncate a fine periodic field to the modes of an r^3 grid (|n_i| < r/2) and sample it at the coarse nodes."""
+    n = rho_fine.shape[0]
+    f = jnp.fft.rfftn(rho_fine)
+    keep = np.array([i for i in range(r) if i != r // 2]); src = np.where(keep < r // 2, keep, keep - r) % n
+    sub = f[src][:, src][:, :, : r // 2]
+    out = jnp.zeros((r, r, r // 2 + 1), dtype=f.dtype).at[keep[:, None, None], keep[None, :, None], np.arange(r // 2)[None, None, :]].set(sub)
+    return jnp.fft.irfftn(out, s=(r, r, r)) * (r / n) ** 3
+
+
 # ----------------------------------------------------------------------------------------------
 # Forward model
 # ----------------------------------------------------------------------------------------------
@@ -127,7 +137,7 @@ class ForwardModel:
     def __init__(self, cosmo: Cosmology, shells: list[Shell], L: float = 10000.0, res: int = 80,
                  nz_funcs: dict | None = None, ang_mask=None, mask_nside: int = 64, n_order: int = 2,
                  worder: int = 2, precision: str = "double", observer=None, requires_jacfwd: bool = False,
-                 oversample: int = 1):
+                 oversample: int = 1, down: str = "fourier"):
         """
         nz_funcs: {tracer: callable z -> observed density (h/Mpc)^3}
         ang_mask: HEALPix map (nside=mask_nside, RING) of fractional coverage in [0,1]
@@ -163,6 +173,7 @@ class ForwardModel:
         self.q = jnp.asarray(self.dj.q, dtype=self.dtype)                    # (res,res,res,3)
         # particle lattice (fine when oversampled)
         self.os = int(oversample)
+        self.down = down
         self.rp = self.res * self.os
         if self.os > 1:
             self.djp = DiscoDJ(dim=3, res=self.rp, boxsize=L, precision=precision,
@@ -309,8 +320,16 @@ class ForwardModel:
                       worder=self.worder, requires_jacfwd=self.requires_jacfwd)
         if self.os == 1:
             return rho
+        return self.downsample(rho)
+
+    def downsample(self, rho_fine):
+        """Fine mesh -> res^3 data grid. 'fourier': keep the coarse-grid Fourier modes (Nyquist planes dropped) and
+        sample at the coarse nodes, an orthogonal projection, so unresolved small-scale power does not alias into the
+        analysis grid and white noise stays white; 'block': cell average (NGP-equivalent window, aliases)."""
         r, o = self.res, self.os
-        return rho.reshape(r, o, r, o, r, o).mean(axis=(1, 3, 5))
+        if getattr(self, "down", "fourier") == "block":
+            return rho_fine.reshape(r, o, r, o, r, o).mean(axis=(1, 3, 5))
+        return fourier_downsample(rho_fine, r)
 
     def __call__(self, eps, theta, layout: ParamLayout, rsd=True):
         """Return {tracer: expected counts field (res^3)}."""

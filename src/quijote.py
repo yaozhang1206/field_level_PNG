@@ -60,6 +60,18 @@ def ngp_mesh(pos, L, res, shift=0.0):
     return np.bincount((i[:, 0] * res + i[:, 1]) * res + i[:, 2], minlength=res ** 3).reshape((res,) * 3).astype(float)
 
 
+def fourier_grid(pos, L, res, oversample=4):
+    """CIC counts on the fine (oversample*res)^3 mesh, truncated to the res^3 grid's Fourier modes and sampled at the
+    coarse nodes (same operation as ForwardModel.downsample 'fourier')."""
+    rf = res * oversample
+    fine = cic_mesh(pos, L, rf)
+    f = np.fft.rfftn(fine)
+    keep = np.array([i for i in range(res) if i != res // 2]); src = np.where(keep < res // 2, keep, keep - res) % rf
+    out = np.zeros((res, res, res // 2 + 1), dtype=complex)
+    out[np.ix_(keep, keep, np.arange(res // 2))] = f[np.ix_(src, src, np.arange(res // 2))]
+    return np.fft.irfftn(out, s=(res,) * 3) * (res / rf) ** 3
+
+
 def redshift_space(pos, vel, z, cosmo, L, axis=2):
     """Displace along `axis` by v (1+z)/H(z): v in km/s (physical peculiar), H in km/s/(Mpc/h) -> Mpc/h; periodic."""
     Ez = float(cosmo.H(z)) / 100.0 if hasattr(cosmo, "H") else np.sqrt(cosmo.p.Omega_m * (1 + z) ** 3 + 1 - cosmo.p.Omega_m)

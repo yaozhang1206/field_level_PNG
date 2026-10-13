@@ -8,7 +8,7 @@ import numpy as np
 ROOT = os.path.join(os.path.dirname(__file__), "..")
 sys.path.insert(0, os.path.join(ROOT, "src"))
 import jax, jax.numpy as jnp
-from quijote import quijote_cosmology, ngp_mesh, cic_mesh, redshift_space, L_QUIJOTE
+from quijote import quijote_cosmology, fourier_grid, ngp_mesh, cic_mesh, redshift_space, L_QUIJOTE
 from forward_model import ForwardModel, ParamLayout, default_shell
 sys.path.insert(0, os.path.join(ROOT, "test"))
 from _common import save_fig, write_note, plt
@@ -43,10 +43,10 @@ for rsd in (False, True):
         d = np.load(f"{sdir}/{i}.npz"); pos = d["pos"].astype(float)
         if rsd: pos = redshift_space(pos, d["vel"].astype(float), z, c, L)
         shot = L ** 3 / len(pos)
-        Pd.append(pk(ngp_mesh(pos, L, res, shift=L / (2 * 4 * res))) - shot)
+        Pd.append(pk(fourier_grid(pos, L, res, 4)) - shot)
     rows[("data", rsd)] = np.mean(Pd, 0) / Plin
     nbar = np.mean([summ["realisations"][str(i)]["n"] for i in ids])
-    for os_ in (1, 2, 4):
+    for os_ in (4,):
         sh = default_shell("LRG", z, z, b1, a.p)
         fm = ForwardModel(c, [sh], L=L, res=res, nz_funcs={"LRG": lambda zz: np.full_like(zz, nbar)}, observer=[L / 2, L / 2, -200 * L], oversample=os_)
         fm.nbar_cell[0] = jnp.full((res,) * 3, nbar * fm.V_cell); fm.footprint = {"LRG": np.ones((res,) * 3, bool)}
@@ -68,7 +68,7 @@ axes[0].set_ylabel("raw grid $P(k)/P_{\\rm lin}$"); axes[0].legend(fontsize=8)
 tag = f"stage3_window_{a.sample}_res{res}"
 save_fig(fig, tag)
 lines = [f"Sample {a.sample}, realisations {a.ids}, z = {z}, measured $b_1$ = {b1:.3f}; {res}$^3$ grid, cell {L/res:.1f} Mpc/h.",
-         "Data: NGP counts (cells aligned with the block-averaged fine lattice), shot noise $L^3/N$ subtracted. Model: forward model at the data's",
+         "Data: CIC on the $64^3$ mesh truncated to the $16^3$ grid's Fourier modes, shot noise $L^3/N$ subtracted. Model: same downsampling, forward model at the data's",
          "$b_1$ (Lazeyras $b_2$, $b_K = -2/7(b_1-1)$, $f_{\\rm NL} = 0$), 16 random fields. Raw grid power, no window deconvolution, so model and",
          "data should agree if the model's grid window matches the data's.", "", "| k | " + " | ".join(f"{kk:.3f}" for kk in kc) + " |", "|---|" + "---|" * nb]
 for key, v in rows.items():
