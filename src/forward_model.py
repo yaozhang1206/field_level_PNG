@@ -72,10 +72,13 @@ def default_shell(tracer, zlo, zhi, b1, p):
 
 # parameter layout: theta = [f_NL] + per shell [b1, b2, bK] (+ [bphi, bphidelta] if sample_bphi) (+ [blap] if lap)
 class ParamLayout:
-    def __init__(self, shells, sample_bphi=False, lap=False):
+    def __init__(self, shells, sample_bphi=False, lap=False, templates=None):
+        """templates: list of (tracer, label) imaging-template amplitudes appended after the shell parameters
+        (contamination <N_t> -> <N_t> [1 + sum_k a_k tau_k], see ForwardModel.set_templates)."""
         self.shells = shells
         self.sample_bphi = sample_bphi
         self.lap = lap
+        self.templates = list(templates or [])
         self.per_shell = (5 if sample_bphi else 3) + (1 if lap else 0)
         self.names = ["f_NL"]
         for i, s in enumerate(shells):
@@ -85,12 +88,15 @@ class ParamLayout:
                 self.names += [f"bphi_{tag}", f"bphid_{tag}"]
             if lap:
                 self.names += [f"blap_{tag}"]
+        self.t0 = len(self.names)
+        self.names += [f"a_{t}:{lab}" for t, lab in self.templates]
         self.n = len(self.names)
 
     def fiducial(self, f_NL=0.0):
         th = [f_NL]
         for s in self.shells:
             th += [s.b1, s.b2, s.bK] + ([s.bphi, s.bphidelta] if self.sample_bphi else []) + ([s.blap] if self.lap else [])
+        th += [0.0] * len(self.templates)
         return jnp.asarray(th, dtype=jnp.float64)
 
     def blap(self, theta, i):
@@ -220,6 +226,22 @@ class ForwardModel:
         # selection on the Eulerian grid: chi, z, angular coverage per voxel
         self._build_selection(nz_funcs, ang_mask, mask_nside)
         self.tracers = sorted(set(s.tracer for s in shells))
+
+    # ---- imaging templates (Stage 4) ---------------------------------------------------------
+    def set_templates(self, layout, maps):
+        """maps: (K, res, res, res) template values tau_k on the grid (0 outside the template's region), in the
+        order of layout.templates. The model counts of tracer t are multiplied by 1 + sum_{k in t} a_k tau_k."""
+        self.tmpl_maps = jnp.asarray(maps, dtype=self.dtype).reshape(len(layout.templates), -1)
+        self.tmpl_mask = {t: jnp.asarray([1.0 if tr == t else 0.0 for tr, _ in layout.templates]) for t in self.tracers}
+
+    def _contaminate(self, out, theta, layout):
+        if not getattr(layout, "templates", None) or getattr(self, "tmpl_maps", None) is None:
+            return out
+        a = theta[layout.t0:layout.t0 + len(layout.templates)]
+        for t in out:
+            c = (a * self.tmpl_mask[t]) @ self.tmpl_maps
+            out[t] = out[t] * (1.0 + c.reshape(out[t].shape))
+        return out
 
     # ---- selection ---------------------------------------------------------------------------
     def _build_selection(self, nz_funcs, ang_mask, nside):
@@ -357,7 +379,7 @@ class ForwardModel:
             w = self.weights(delta_L, phi, K2, self.D[i], f_NL, b1, b2, bK, bphi, bphid, layout.blap(theta, i) if lap is not None else 0.0, lap)
             rho = self.scatter(self.positions(psis, i, rsd), w)
             out[s.tracer] = out[s.tracer] + self.nbar_cell[i] * rho
-        return out
+        return self._contaminate(out, theta, layout)
 
     def linear_galaxy_field(self, eps, theta, layout: ParamLayout, rsd=True):
         """Strictly linear model for operator validation: <N> = nbar V [1 + (b1 + bphi f_NL/T(k) + f mu_z^2) D delta_L(k)]
@@ -374,7 +396,7 @@ class ForwardModel:
             kern = (b1 + (self.f[i] * mu2 if rsd else 0.0)) * self.D[i] + bphi * f_NL * self.invT_mesh
             dg = jnp.fft.irfftn(kern * fdelta, s=(self.res,) * 3)
             out[s.tracer] = out[s.tracer] + self.nbar_cell[i] * (1.0 + dg)
-        return out
+        return self._contaminate(out, theta, layout)
 
     def matter_field(self, eps, f_NL=0.0, i=0, rsd=False):
         """1 + delta_m (2LPT) for shell i's scale factor; for tests."""

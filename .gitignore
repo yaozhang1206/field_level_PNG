@@ -5,3 +5,4 @@ results/cache/
 notebooks/.ipynb_checkpoints/
 *.fits
 results/chain_*.npz
+results/fisher_syst_*_ckpt.npz

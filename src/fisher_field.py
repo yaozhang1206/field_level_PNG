@@ -179,6 +179,113 @@ class FieldFisher:
         self.F_marginal_probe_std = np.std([sigma_of(Fp + self.prior) if Fp[0, 0] > 0 else np.nan for Fp in Fs])
         return self.F_marginal
 
+    def fisher_marginal_deproj(self, T, configs, n_probes=8, tol=1e-6, maxiter=400, seed=0, probe_callback=None,
+                               start_probe=0, Fs_prev=None):
+        """Exact Gaussian-marginal Fisher with template modes deprojected (flat-prior marginalisation of template
+        amplitudes): C_c = C + Lambda T_c^T T_c, Lambda -> inf, for several nested template sets at once.
+            C_c^-1 = P_c C^-1,  P_c b = b - C^-1 T_c^T (T_c C^-1 T_c^T)^-1 T_c b   (Woodbury)
+        T: (k, n_data) template vectors; configs: {name: row indices into T} ([] = no deprojection).
+        The CG solves C^-1 z and C^-1 dC_j z are shared between configurations; each configuration costs n extra
+        dC evaluations per probe. Returns {name: F (n x n, incl. prior)}; probes kept in self.F_deproj_probes."""
+        t0 = time.time()
+        n = self.layout.n
+        eps, th, var = self.eps_fid, self.theta_fid, 1.0 / self.invvar
+        E = [jnp.zeros(n).at[i].set(1.0) for i in range(n)]
+        dC = lambda w, i: self.ops["dC"](eps, th, w, E[i])
+        T = jnp.asarray(T)
+        def solve(b):
+            x, res = self.ops["solve_C"](eps, th, var, b, tol, maxiter)
+            return x
+        CinvT = jnp.stack([solve(t) for t in T]) if len(T) else jnp.zeros((0, self.n_data))
+        self.log(f"  deproj: {len(T)} template solves in {time.time()-t0:.0f}s")
+        proj = {}
+        for name, rows in configs.items():
+            rows = np.asarray(rows, dtype=int)
+            if len(rows) == 0:
+                proj[name] = None; continue
+            Tc, Ac = T[rows], CinvT[rows]
+            G = Tc @ Ac.T
+            Ginv = jnp.asarray(np.linalg.pinv(np.asarray(G), rcond=1e-10))
+            proj[name] = (Tc, Ac, Ginv)
+        def P(name, x):                                   # x = C^-1 b  ->  C_c^-1 b
+            if proj[name] is None:
+                return x
+            Tc, Ac, Ginv = proj[name]
+            return x - Ac.T @ (Ginv @ (Tc @ x))
+        key = jax.random.PRNGKey(seed)
+        Fs = {c: list(Fs_prev[c]) for c in configs} if Fs_prev else {c: [] for c in configs}
+        for p_ in range(n_probes):
+            key, sub = jax.random.split(key)
+            if p_ < start_probe:
+                continue
+            z = jax.random.rademacher(sub, (self.n_data,), dtype=jnp.float64)
+            x0 = solve(z)
+            Y = [solve(dC(z, j)) for j in range(n)]                     # C^-1 dC_j z
+            for c in configs:
+                xc = P(c, x0)
+                W = jnp.stack([dC(xc, i) for i in range(n)])
+                Yc = jnp.stack([P(c, y) for y in Y])
+                Fp = 0.5 * np.asarray(W @ Yc.T)
+                Fs[c].append(0.5 * (Fp + Fp.T))
+            msg = "  ".join(f"{c} {sigma_of(np.mean(Fs[c], 0) + self.prior):.2f}" for c in configs)
+            self.log(f"  probe {p_+1}/{n_probes}: sigma(f_NL) {msg}  {time.time()-t0:.0f}s")
+            if probe_callback is not None:
+                probe_callback(Fs)
+        self.F_deproj_probes = Fs
+        return {c: np.mean(Fs[c], 0) + self.prior for c in configs}
+
+    def deproj_loss(self, T, configs, tol=1e-6, maxiter=400, log_every=20, checkpoint=None):
+        """Exact Fisher information removed by deprojecting template modes (no probe noise).
+        With A = C^-1 T^T (rows a_m), Q_c = A_c^T G_c^-1 A_c, G_c = T_c A_c^T, and C_c^-1 = C^-1 - Q_c:
+            dF_ij = 1/2 [Tr(Q dC_i C^-1 dC_j) + (i<->j)] - 1/2 Tr(Q dC_i Q dC_j)
+            Tr(Q dC_i C^-1 dC_j) = Tr(G^-1 D_i B_j^T),  D_i[m] = dC_i a_m,  B_j[m] = C^-1 dC_j a_m
+            Tr(Q dC_i Q dC_j)    = Tr(G^-1 H_i G^-1 H_j), H_i = A D_i^T.
+        Cost: k (1 + n) CG solves for k templates and n parameters, shared by all configurations.
+        checkpoint: .npz path; the reduced quantities (T A^T, H, completed columns of D B^T) are saved after every
+        parameter so that a run interrupted at a session limit resumes (A and D are recomputed).
+        Returns {name: dF (n x n)}; F_c = F_none - dF_c."""
+        import os
+        t0 = time.time()
+        n = self.layout.n
+        eps, th, var = self.eps_fid, self.theta_fid, 1.0 / self.invvar
+        E = [jnp.zeros(n).at[i].set(1.0) for i in range(n)]
+        dC = lambda w, i: self.ops["dC"](eps, th, w, E[i])
+        solve = lambda b: self.ops["solve_C"](eps, th, var, b, tol, maxiter)[0]
+        T = jnp.asarray(T); k = len(T)
+        A = jnp.stack([solve(t) for t in T])
+        self.log(f"  deproj_loss: {k} template solves {time.time()-t0:.0f}s")
+        D = [jnp.stack([dC(A[m], i) for m in range(k)]) for i in range(n)]          # (k, n_data) each
+        TA = np.asarray(T @ A.T)
+        H = np.array([np.asarray(A @ D[i].T) for i in range(n)])                          # (n, k, k)
+        DB = np.full((n, n, k, k), np.nan); done = np.zeros(n, bool)
+        if checkpoint and os.path.exists(checkpoint):
+            ck = np.load(checkpoint)
+            if ck["DB"].shape == DB.shape:
+                DB, done = ck["DB"], ck["done"]
+                self.log(f"  deproj_loss: resumed with {done.sum()}/{n} parameters done")
+        for j in range(n):
+            if done[j]:
+                continue
+            Bj = jnp.stack([solve(D[j][m]) for m in range(k)])
+            for i in range(n):
+                DB[i, j] = np.asarray(D[i] @ Bj.T)
+            done[j] = True
+            if checkpoint:
+                np.savez(checkpoint, DB=DB, done=done, TA=TA, H=H)
+            self.log(f"  deproj_loss: parameter {j+1}/{n} done  {time.time()-t0:.0f}s")
+        out = {}
+        for name, rows in configs.items():
+            rows = np.asarray(rows, dtype=int)
+            if len(rows) == 0:
+                out[name] = np.zeros((n, n)); continue
+            Gi = np.linalg.pinv(TA[np.ix_(rows, rows)], rcond=1e-10)
+            t1 = np.array([[np.trace(Gi @ DB[i, j][np.ix_(rows, rows)]) for j in range(n)] for i in range(n)])
+            Hc = H[:, rows][:, :, rows]
+            t2 = np.array([[np.trace(Gi @ Hc[i] @ Gi @ Hc[j]) for j in range(n)] for i in range(n)])
+            out[name] = 0.5 * (t1 + t1.T) - 0.5 * t2
+        self.log(f"  deproj_loss done {time.time()-t0:.0f}s")
+        return out
+
     def sigma(self, idx=0, F=None):
         F = self.F_marg if F is None else F
         keep = np.where(np.diag(F) > 0)[0]
