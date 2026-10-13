@@ -61,12 +61,13 @@ class FieldPosterior:
         return mu + jnp.sqrt(self.var) * jax.random.normal(key, mu.shape, dtype=jnp.float64)
 
     # ---- log posterior ----------------------------------------------------------------------
-    def log_like(self, eps, theta, d):
+    def log_like(self, eps, theta, d, log_noise=0.0):
+        """log_noise: ln A for the Gaussian variance A * sigma^2 (A = 1: the Poisson-level variance)."""
         mu = self.model(eps, theta)
         if self.likelihood == "poisson":
             mu = self.mu_floor + jax.nn.softplus(mu - self.mu_floor)
             return jnp.sum(d * jnp.log(mu) - mu)
-        return -0.5 * jnp.sum((d - mu) ** 2 * self.invvar)
+        return -0.5 * jnp.sum((d - mu) ** 2 * self.invvar) * jnp.exp(-log_noise) - 0.5 * self.n_data * log_noise
 
     def log_prior(self, eps, theta):
         lp = -0.5 * jnp.sum(eps ** 2)
@@ -74,26 +75,38 @@ class FieldPosterior:
             lp = lp - 0.5 * jnp.sum(((theta - self.layout.fiducial()) / self.theta_prior_sigma) ** 2)
         return lp
 
-    def log_post(self, eps, theta, d):
-        return self.log_like(eps, theta, d) + self.log_prior(eps, theta)
+    def log_post(self, eps, theta, d, log_noise=0.0):
+        return self.log_like(eps, theta, d, log_noise) + self.log_prior(eps, theta)
 
-    def make_logdensity(self, d, theta_scale=None, free=None, theta_fid=None):
-        """Return (logdensity(state), unpack) with a flat state vector [eps.ravel(), theta_w[free]] where
-        theta[free] = theta_fid[free] + theta_scale[free] * theta_w (whitened), other parameters fixed."""
-        n_eps = self.fm.res ** 3; shape = (self.fm.res,) * 3
+    def make_logdensity(self, d, theta_scale=None, free=None, theta_fid=None, sample_noise=False, log_noise=0.0,
+                        sample_eps=True, eps_fixed=None):
+        """Return (logdensity(state), unpack) with a flat state vector [eps.ravel(), theta_w[free], (ln A)] where
+        theta[free] = theta_fid[free] + theta_scale[free] * theta_w (whitened), other parameters fixed.
+        sample_noise: append ln A (noise variance amplitude, flat prior); otherwise ln A = log_noise.
+        sample_eps=False: eps held at eps_fixed (state has no eps block). unpack returns (eps, theta[, ln A])."""
+        n_eps = self.fm.res ** 3 if sample_eps else 0; shape = (self.fm.res,) * 3
         th0 = self.layout.fiducial() if theta_fid is None else jnp.asarray(theta_fid)
         free = jnp.arange(self.layout.n) if free is None else jnp.asarray(free)
+        nf = len(free)
         scale = jnp.ones_like(th0) if theta_scale is None else jnp.asarray(theta_scale)
+        def _unpack3(state):
+            theta = th0.at[free].add(scale[free] * state[n_eps:n_eps + nf])
+            lnA = state[n_eps + nf] if sample_noise else log_noise
+            eps = state[:n_eps].reshape(shape) if sample_eps else eps_fixed
+            return eps, theta, lnA
         def unpack(state):
-            theta = th0.at[free].add(scale[free] * state[n_eps:])
-            return state[:n_eps].reshape(shape), theta
+            u = _unpack3(state)
+            return u if sample_noise else u[:2]
         def logdensity(state):
-            eps, theta = unpack(state)
-            return self.log_post(eps, theta, d)
+            eps, theta, lnA = _unpack3(state)
+            return self.log_post(eps, theta, d, lnA)
         return jax.jit(logdensity), unpack
 
-    def pack(self, eps, theta, theta_scale=None, free=None, theta_fid=None):
+    def pack(self, eps, theta, theta_scale=None, free=None, theta_fid=None, log_noise=None, sample_eps=True):
         th0 = self.layout.fiducial() if theta_fid is None else jnp.asarray(theta_fid)
         free = jnp.arange(self.layout.n) if free is None else jnp.asarray(free)
         scale = jnp.ones_like(th0) if theta_scale is None else jnp.asarray(theta_scale)
-        return jnp.concatenate([jnp.ravel(eps), ((theta - th0) / scale)[free]])
+        parts = ([jnp.ravel(eps)] if sample_eps else []) + [((theta - th0) / scale)[free]]
+        if log_noise is not None:
+            parts.append(jnp.atleast_1d(jnp.asarray(log_noise, dtype=jnp.float64)))
+        return jnp.concatenate(parts)

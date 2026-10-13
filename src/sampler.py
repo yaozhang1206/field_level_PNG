@@ -107,6 +107,14 @@ def run_hmc(logdensity, state0, n_leapfrog=32, n_warmup=200, n_samples=1000, see
     return _sample(kernel, state, ks, n_samples, thin, unpack, record, log, t0, checkpoint)
 
 
+def _unpack(unpack, position):
+    """unpack -> (eps, theta) or (eps, theta, ln A); ln A is appended to the recorded theta row."""
+    u = unpack(position)
+    if len(u) > 2:
+        return u[0], np.append(np.asarray(u[1]), float(u[2]))
+    return u[0], u[1]
+
+
 def _sample(kernel, state, key, n_samples, thin, unpack, record, log, t0, checkpoint=None):
     """checkpoint(thetas, accept, nsteps) is called every 250 kept samples (partial results)."""
     thetas, recs, accept, nsteps = [], [], [], []
@@ -114,7 +122,7 @@ def _sample(kernel, state, key, n_samples, thin, unpack, record, log, t0, checkp
         key, k = jax.random.split(key)
         state, info = kernel(k, state)
         if i % thin == 0:
-            eps, th = unpack(state.position)
+            eps, th = _unpack(unpack, state.position)
             thetas.append(np.asarray(th))
             if record is not None:
                 recs.append(record(eps, th))
@@ -151,7 +159,7 @@ def run_mclmc(logdensity, state0, n_warmup=1000, n_samples=5000, seed=0, log=pri
         ks, k = jax.random.split(ks)
         state, info = step(k, state)
         if i % thin == 0:
-            eps, th = unpack(state.position); thetas.append(np.asarray(th))
+            eps, th = _unpack(unpack, state.position); thetas.append(np.asarray(th))
             if record is not None:
                 recs.append(record(eps, th))
         if (i + 1) % max(1, (n_samples * thin) // 10) == 0:

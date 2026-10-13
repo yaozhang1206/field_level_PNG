@@ -52,6 +52,22 @@ def read_catalogue(path, hosts_only=True):
     return {"mass": d[:, 0], "pos": d[:, 1:4], "vel": d[:, 4:7]}
 
 
+def ngp_mesh(pos, L, res, shift=0.0):
+    """Counts in cells on a res^3 periodic mesh; cell j covers [j L/res - shift, (j+1) L/res - shift).
+    The forward model with oversample = o block-averages fine CIC nodes 0..o-1 (node spacing L/(o res)), whose
+    support is offset by half a fine spacing: use shift = L / (2 o res) to match it."""
+    i = np.floor(((np.asarray(pos) + shift) / L * res) % res).astype(np.int64) % res
+    return np.bincount((i[:, 0] * res + i[:, 1]) * res + i[:, 2], minlength=res ** 3).reshape((res,) * 3).astype(float)
+
+
+def redshift_space(pos, vel, z, cosmo, L, axis=2):
+    """Displace along `axis` by v (1+z)/H(z): v in km/s (physical peculiar), H in km/s/(Mpc/h) -> Mpc/h; periodic."""
+    Ez = float(cosmo.H(z)) / 100.0 if hasattr(cosmo, "H") else np.sqrt(cosmo.p.Omega_m * (1 + z) ** 3 + 1 - cosmo.p.Omega_m)
+    out = np.array(pos, dtype=float)
+    out[:, axis] = (out[:, axis] + vel[:, axis] * (1 + z) / (100.0 * Ez)) % L
+    return out
+
+
 # ---- power spectrum on a mesh ---------------------------------------------------------------
 def cic_mesh(pos, L, res):
     """CIC density (counts) on a res^3 periodic mesh."""

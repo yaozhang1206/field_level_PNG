@@ -47,6 +47,7 @@ class Shell:
     bphi: float
     bphidelta: float
     p: float
+    blap: float = 0.0          # Laplacian bias b_nabla [(Mpc/h)^2]
     # filled by the model
     a: float = 0.0
     chi_lo: float = 0.0
@@ -69,25 +70,36 @@ def default_shell(tracer, zlo, zhi, b1, p):
     return Shell(tracer, zlo, zhi, b1, b2, bK, bias_phi(b1, p), euclid_bphidelta(b1, b2, p), p)
 
 
-# parameter layout: theta = [f_NL] + per shell [b1, b2, bK] (+ [bphi, bphidelta] if sample_bphi)
+# parameter layout: theta = [f_NL] + per shell [b1, b2, bK] (+ [bphi, bphidelta] if sample_bphi) (+ [blap] if lap)
 class ParamLayout:
-    def __init__(self, shells, sample_bphi=False):
+    def __init__(self, shells, sample_bphi=False, lap=False):
         self.shells = shells
         self.sample_bphi = sample_bphi
-        self.per_shell = 5 if sample_bphi else 3
+        self.lap = lap
+        self.per_shell = (5 if sample_bphi else 3) + (1 if lap else 0)
         self.names = ["f_NL"]
         for i, s in enumerate(shells):
             tag = f"{s.tracer}{i}"
             self.names += [f"b1_{tag}", f"b2_{tag}", f"bK_{tag}"]
             if sample_bphi:
                 self.names += [f"bphi_{tag}", f"bphid_{tag}"]
+            if lap:
+                self.names += [f"blap_{tag}"]
         self.n = len(self.names)
 
     def fiducial(self, f_NL=0.0):
         th = [f_NL]
         for s in self.shells:
-            th += [s.b1, s.b2, s.bK] + ([s.bphi, s.bphidelta] if self.sample_bphi else [])
+            th += [s.b1, s.b2, s.bK] + ([s.bphi, s.bphidelta] if self.sample_bphi else []) + ([s.blap] if self.lap else [])
         return jnp.asarray(th, dtype=jnp.float64)
+
+    def blap(self, theta, i):
+        """Laplacian bias b_nabla [(Mpc/h)^2] of shell i (0 if not in the layout)."""
+        return theta[1 + (i + 1) * self.per_shell - 1] if self.lap else 0.0
+
+    def index(self, name_prefix, i):
+        """Index of parameter `name_prefix` (b1, b2, bK, bphi, bphid, blap) of shell i in theta."""
+        return self.names.index(f"{name_prefix}_{self.shells[i].tracer}{i}")
 
     def unpack(self, theta, i):
         """Return (f_NL, b1, b2, bK, bphi, bphidelta) for shell i."""
@@ -114,10 +126,16 @@ class ParamLayout:
 class ForwardModel:
     def __init__(self, cosmo: Cosmology, shells: list[Shell], L: float = 10000.0, res: int = 80,
                  nz_funcs: dict | None = None, ang_mask=None, mask_nside: int = 64, n_order: int = 2,
-                 worder: int = 2, precision: str = "double", observer=None, requires_jacfwd: bool = False):
+                 worder: int = 2, precision: str = "double", observer=None, requires_jacfwd: bool = False,
+                 oversample: int = 1):
         """
         nz_funcs: {tracer: callable z -> observed density (h/Mpc)^3}
         ang_mask: HEALPix map (nside=mask_nside, RING) of fractional coverage in [0,1]
+        oversample: particle lattice = oversample * res per dimension. eps stays res^3 (zero-padded in Fourier space,
+            Nyquist planes dropped); the Lagrangian fields, PNG and nLPT run on the fine lattice; particles are
+            CIC-assigned to the fine mesh and block-averaged to the res^3 data grid. The expected counts are then the
+            cell integrals of the model density (top-hat window), i.e. the expectation of NGP-gridded tracer counts,
+            whose noise is Poisson and uncorrelated between cells. oversample = 1 is the Stage 1-2 model (lattice CIC).
         """
         from discodj import DiscoDJ
         self.cosmo, self.shells, self.L, self.res = cosmo, shells, float(L), int(res)
@@ -143,6 +161,30 @@ class ForwardModel:
         self.inv_lap = jnp.where(self.kmesh == 0, 0.0, -1.0 / k_safe ** 2)
         # Lagrangian grid and observer
         self.q = jnp.asarray(self.dj.q, dtype=self.dtype)                    # (res,res,res,3)
+        # particle lattice (fine when oversampled)
+        self.os = int(oversample)
+        self.rp = self.res * self.os
+        if self.os > 1:
+            self.djp = DiscoDJ(dim=3, res=self.rp, boxsize=L, precision=precision,
+                               cosmo=dict(Omega_c=cp.Omega_c, Omega_b=cp.Omega_b, h=cp.h, sigma8=cosmo.sigma8(0.0),
+                                          n_s=cp.n_s, Omega_k=0.0, w0=-1.0, wa=0.0)).with_timetables()
+            self.djp = self.djp.update(pk_table={"k": jnp.asarray(kg), "Pk": jnp.asarray(np.asarray(cosmo.P_lin(kg, 0.0)))})
+            kdp = self.djp.k_dict
+            self.kmesh_p = jnp.asarray(kdp["|k|"])
+            self.kvecs_p = [jnp.asarray(k) for k in kdp["k_vecs"]]
+            kps = jnp.where(self.kmesh_p == 0, 1.0, self.kmesh_p)
+            self.T_mesh_p = jnp.where(self.kmesh_p == 0, 0.0, jnp.asarray(np.asarray(cosmo.T_Phi_delta(kps, 0.0))))
+            self.inv_lap_p = jnp.where(self.kmesh_p == 0, 0.0, -1.0 / kps ** 2)
+            self.qp = jnp.asarray(self.djp.q, dtype=self.dtype)
+            # zero-padding map coarse rfft -> fine rfft (Nyquist planes of the coarse grid dropped)
+            n = self.res; keep = np.array([i for i in range(n) if i != n // 2])
+            f01 = np.where(keep < n // 2, keep, keep - n) % self.rp
+            keepz = np.arange(n // 2)                       # rfft axis: 0 .. n/2-1
+            self._pad_src = (keep, keep, keepz)
+            self._pad_dst = (f01, f01, keepz)
+        else:
+            self.djp, self.kmesh_p, self.kvecs_p = self.dj, self.kmesh, self.kvecs
+            self.T_mesh_p, self.inv_lap_p, self.qp = self.T_mesh, self.inv_lap, self.q
         self.observer = jnp.asarray(observer if observer is not None else [L / 2] * 3, dtype=self.dtype)
         # shells: scale factor, chi range
         for s in self.shells:
@@ -193,29 +235,52 @@ class ForwardModel:
         delta_L = jnp.fft.irfftn(fdelta_ng, s=eps.shape)
         return fdelta_ng, delta_L, phi
 
+    def _pad(self, fk):
+        """Coarse rfft coefficients -> fine-lattice rfft coefficients (same real-space field values)."""
+        a, b, c = self._pad_src; A, B, C = self._pad_dst
+        sub = fk[a][:, b][:, :, c]
+        out = jnp.zeros((self.rp, self.rp, self.rp // 2 + 1), dtype=fk.dtype)
+        return out.at[A[:, None, None], B[None, :, None], C[None, None, :]].set(sub * self.os ** 3)
+
+    def particle_fields(self, eps, f_NL):
+        """(delta_NG(k) [rfft], delta_L(q), phi(q)) on the particle lattice (= linear_fields when oversample = 1)."""
+        if self.os == 1:
+            return self.linear_fields(eps, f_NL)
+        eps = jnp.asarray(eps, dtype=self.dtype)
+        fphi_c = jnp.fft.rfftn(eps) * jnp.sqrt(self.Pk_mesh * self.norm) * self.invT_mesh
+        shape = (self.rp,) * 3
+        phi = jnp.fft.irfftn(self._pad(fphi_c), s=shape)
+        phi_ng = phi + f_NL * (phi ** 2 - jnp.mean(phi ** 2))
+        fdelta_ng = jnp.fft.rfftn(phi_ng) * self.T_mesh_p
+        delta_L = jnp.fft.irfftn(fdelta_ng, s=shape)
+        return fdelta_ng, delta_L, phi
+
+    def laplacian(self, fdelta):
+        return jnp.fft.irfftn(-(self.kmesh_p ** 2) * fdelta, s=(self.rp,) * 3)
+
     def tidal_K2(self, fdelta):
-        """K^2 = K_ij K_ij with K_ij = (k_i k_j / k^2 - delta_ij/3) delta."""
-        k2 = jnp.where(self.kmesh == 0, 1.0, self.kmesh ** 2)
-        shape = (self.res,) * 3
+        """K^2 = K_ij K_ij with K_ij = (k_i k_j / k^2 - delta_ij/3) delta (on the particle lattice)."""
+        k2 = jnp.where(self.kmesh_p == 0, 1.0, self.kmesh_p ** 2)
+        shape = (self.rp,) * 3
         K2 = 0.0
         for i in range(3):
             for j in range(3):
-                kern = self.kvecs[i] * self.kvecs[j] / k2 - (1.0 / 3.0 if i == j else 0.0)
+                kern = self.kvecs_p[i] * self.kvecs_p[j] / k2 - (1.0 / 3.0 if i == j else 0.0)
                 Kij = jnp.fft.irfftn(kern * fdelta, s=shape)
                 K2 = K2 + Kij ** 2
         return K2
 
     # ---- LPT ---------------------------------------------------------------------------------
     def lpt(self, fdelta_ng):
-        fphi = fdelta_ng * self.inv_lap
-        dj = self.dj.update(ics={"fphi": fphi}).with_lpt(n_order=self.n_order)
+        fphi = fdelta_ng * self.inv_lap_p
+        dj = self.djp.update(ics={"fphi": fphi}).with_lpt(n_order=self.n_order)
         psi = dj._lpt.psi
         return [psi[f"psi_{n}"] for n in range(1, self.n_order + 1)]
 
     def positions(self, psis, i, rsd=True):
         D, f = self.D[i], self.f[i]
         disp = sum(D ** (n + 1) * p for n, p in enumerate(psis))
-        x = self.q + disp
+        x = self.qp + disp
         if rsd:
             vdisp = f * sum((n + 1) * D ** (n + 1) * p for n, p in enumerate(psis))
             r = x - self.observer
@@ -224,7 +289,7 @@ class ForwardModel:
         return jnp.mod(x, self.L)
 
     # ---- galaxy field ---------------------------------------------------------------------------
-    def weights(self, delta_L, phi, K2, D, f_NL, b1, b2, bK, bphi, bphid):
+    def weights(self, delta_L, phi, K2, D, f_NL, b1, b2, bK, bphi, bphid, blap=0.0, lap=None):
         """Lagrangian weights at growth factor D: delta_L, K2 are the z=0 linear fields, phi is primordial."""
         b1L = b1 - 1.0
         b2L = b2 - (8.0 / 21.0) * b1L
@@ -233,26 +298,31 @@ class ForwardModel:
         dL = D * delta_L
         K2D = D ** 2 * K2
         return (1.0 + b1L * dL + 0.5 * b2L * (dL ** 2 - jnp.mean(dL ** 2)) + bKL * (K2D - jnp.mean(K2D))
-                + bphi * f_NL * phi + bphidL * f_NL * dL * phi)
+                + bphi * f_NL * phi + bphidL * f_NL * dL * phi + (blap * D * lap if lap is not None else 0.0))
 
     def scatter(self, pos, w):
         from discodj.core.scatter_and_gather import scatter
-        mesh = jnp.zeros((self.res,) * 3, dtype=self.dtype)
-        n = self.res ** 3
-        return scatter(mesh, pos.reshape(n, 3), n_part_tot=n, res=self.res, boxsize=self.L,
-                       dtype_num=64 if self.dtype == jnp.float64 else 32, weight=w.reshape(n, 1),
-                       worder=self.worder, requires_jacfwd=self.requires_jacfwd)
+        mesh = jnp.zeros((self.rp,) * 3, dtype=self.dtype)
+        n = self.rp ** 3
+        rho = scatter(mesh, pos.reshape(n, 3), n_part_tot=n, res=self.rp, boxsize=self.L,
+                      dtype_num=64 if self.dtype == jnp.float64 else 32, weight=w.reshape(n, 1),
+                      worder=self.worder, requires_jacfwd=self.requires_jacfwd)
+        if self.os == 1:
+            return rho
+        r, o = self.res, self.os
+        return rho.reshape(r, o, r, o, r, o).mean(axis=(1, 3, 5))
 
     def __call__(self, eps, theta, layout: ParamLayout, rsd=True):
         """Return {tracer: expected counts field (res^3)}."""
         f_NL = theta[0]
-        fdelta_ng, delta_L, phi = self.linear_fields(eps, f_NL)
+        fdelta_ng, delta_L, phi = self.particle_fields(eps, f_NL)
         K2 = self.tidal_K2(fdelta_ng)
+        lap = self.laplacian(fdelta_ng) if getattr(layout, "lap", False) else None
         psis = self.lpt(fdelta_ng)
         out = {t: jnp.zeros((self.res,) * 3, dtype=self.dtype) for t in self.tracers}
         for i, s in enumerate(self.shells):
             _, b1, b2, bK, bphi, bphid = layout.unpack(theta, i)
-            w = self.weights(delta_L, phi, K2, self.D[i], f_NL, b1, b2, bK, bphi, bphid)
+            w = self.weights(delta_L, phi, K2, self.D[i], f_NL, b1, b2, bK, bphi, bphid, layout.blap(theta, i) if lap is not None else 0.0, lap)
             rho = self.scatter(self.positions(psis, i, rsd), w)
             out[s.tracer] = out[s.tracer] + self.nbar_cell[i] * rho
         return out
@@ -276,9 +346,9 @@ class ForwardModel:
 
     def matter_field(self, eps, f_NL=0.0, i=0, rsd=False):
         """1 + delta_m (2LPT) for shell i's scale factor; for tests."""
-        fdelta_ng, _, _ = self.linear_fields(eps, f_NL)
+        fdelta_ng, _, _ = self.particle_fields(eps, f_NL)
         psis = self.lpt(fdelta_ng)
-        return self.scatter(self.positions(psis, i, rsd), jnp.ones((self.res,) * 3, dtype=self.dtype))
+        return self.scatter(self.positions(psis, i, rsd), jnp.ones((self.rp,) * 3, dtype=self.dtype))
 
     # ---- diagnostics -----------------------------------------------------------------------------
     def power_spectrum(self, field, nbins=20, kmin=None, kmax=None, mu_bins=None):
