@@ -139,6 +139,7 @@ for i in ids:
         if a.rsd:
             pos = redshift_space(pos, vel, z, cosmo, L, axis=2)
         grid = fourier_grid(pos, L, res, a.oversample) if a.oversample > 1 else cic_mesh(pos, L, res)
+        assert abs(grid.mean() / (nbar * fm.V_cell) - 1) < 1e-6, f"data mean {grid.mean()} != nbar V {nbar * fm.V_cell}"
         data = jnp.asarray(grid.ravel())
     # cold start
     s0 = default_shell(tracer, z, z, b1_pk, p)

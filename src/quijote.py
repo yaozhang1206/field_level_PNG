@@ -62,14 +62,14 @@ def ngp_mesh(pos, L, res, shift=0.0):
 
 def fourier_grid(pos, L, res, oversample=4):
     """CIC counts on the fine (oversample*res)^3 mesh, truncated to the res^3 grid's Fourier modes and sampled at the
-    coarse nodes (same operation as ForwardModel.downsample 'fourier')."""
+    coarse nodes (same operation as ForwardModel.downsample 'fourier'), normalised to counts per coarse cell."""
     rf = res * oversample
     fine = cic_mesh(pos, L, rf)
     f = np.fft.rfftn(fine)
     keep = np.array([i for i in range(res) if i != res // 2]); src = np.where(keep < res // 2, keep, keep - res) % rf
     out = np.zeros((res, res, res // 2 + 1), dtype=complex)
     out[np.ix_(keep, keep, np.arange(res // 2))] = f[np.ix_(src, src, np.arange(res // 2))]
-    return np.fft.irfftn(out, s=(res,) * 3) * (res / rf) ** 3
+    return np.fft.irfftn(out, s=(res,) * 3)          # counts per coarse cell (fine counts summed: x (rf/res)^3 (res/rf)^3)
 
 
 def redshift_space(pos, vel, z, cosmo, L, axis=2):
