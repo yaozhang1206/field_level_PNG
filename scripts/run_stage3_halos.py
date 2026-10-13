@@ -107,7 +107,10 @@ post = FieldPosterior(fm, lay, rsd=a.rsd, linear=False, likelihood="gaussian", t
 th_fid = lay.fiducial(0.0)
 eps_fid = jax.random.normal(jax.random.PRNGKey(123), (res,) * 3, dtype=jnp.float64)
 ff = FieldFisher(fm, lay, eps_fid, th_fid, rsd=a.rsd, linear=False, verbose=False); ff.fisher()
-scale = 1.0 / np.sqrt(np.maximum(np.diag(np.asarray(ff.F_tt)), 1e-12))
+Fdiag = np.diag(np.asarray(ff.F_tt)).copy()
+if prior_sigma is not None:                      # b_phi, b_phidelta: no data information at f_NL = 0 -> scale by the prior
+    Fdiag += 1.0 / np.asarray(prior_sigma) ** 2
+scale = 1.0 / np.sqrt(np.maximum(Fdiag, 1e-12))
 print(f"[stage3] b1_mean {b1_mean:.3f}, nbar {nbar_mean:.2e}, cell {L / res:.1f} Mpc/h, oversample {a.oversample}; "
       f"theta {lay.names} scale {np.round(scale, 4)}", flush=True)
 all_idx = np.arange(lay.n)
