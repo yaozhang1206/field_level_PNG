@@ -118,8 +118,10 @@ def phase(d, eps, theta, lnA, free, n_warm, n_samp, seed):
     """One NUTS run over (eps, theta[free], ln A); returns final (eps, theta, lnA) and the run output."""
     logd, unpack = post.make_logdensity(d, theta_scale=scale, free=free, theta_fid=theta, sample_noise=a.sample_noise)
     st0 = post.pack(eps, theta, scale, free, theta, log_noise=lnA if a.sample_noise else None)
+    rec = jax.jit(lambda e, t: -2.0 * post.log_like(e, t, d) / post.n_data)
     out = run_nuts(logd, st0, n_warmup=n_warm, n_samples=n_samp, seed=seed, unpack=unpack,
-                   max_doublings=a.max_doublings, log=lambda *x: None)
+                   max_doublings=a.max_doublings, log=lambda *x: None,
+                   record=lambda e, t: {"chi2_per_dof": float(rec(e, t))})
     u = unpack(out["final_state"].position)
     return u[0], u[1], (float(u[2]) if a.sample_noise else 0.0), out
 
@@ -160,12 +162,13 @@ for i in ids:
     results["runs"][str(i)] = {"N": N, "nbar": nbar, "b1_pk": b1_pk, "summary": summ,
                                "fnl_chain": np.asarray(out["theta"][:, 0]).astype(np.float32).tolist(),
                                "time": time.time() - t0, "mean_leapfrog": float(np.mean(out["n_steps"])),
-                               "accept": float(np.nanmean(out["accept"]))}
+                               "accept": float(np.nanmean(out["accept"])),
+                               "chi2_per_dof": float(np.mean([r["chi2_per_dof"] for r in out["records"]]))}
     json.dump(results, open(out_path, "w"))
     s = summ["f_NL"]
     extra = "  ".join(f"{n.split('_')[0]} {summ[n]['mean']:.3g}±{summ[n]['std']:.2g}" for n in names[1:])
     print(f"[stage3] {i}: N={N} b1(Pk)={b1_pk:.3f} | f_NL = {s['mean']:+.1f} +- {s['std']:.1f} (tau {s['tau']:.1f}, "
-          f"ESS {s['ess']:.0f}) | {extra}  [{time.time() - t0:.0f}s]", flush=True)
+          f"ESS {s['ess']:.0f}) | {extra} | chi2/dof {results['runs'][str(i)]['chi2_per_dof']:.3f}  [{time.time() - t0:.0f}s]", flush=True)
 
 means = np.array([r["summary"]["f_NL"]["mean"] for r in results["runs"].values()])
 stds = np.array([r["summary"]["f_NL"]["std"] for r in results["runs"].values()])
