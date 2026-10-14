@@ -18,7 +18,6 @@ from templates import data_space_templates, SETS
 ap = argparse.ArgumentParser()
 ap.add_argument("--res", type=int, default=80); ap.add_argument("--nreal", type=int, default=1)
 ap.add_argument("--probes", type=int, default=8); ap.add_argument("--linear", action="store_true")
-ap.add_argument("--per_shell", action="store_true", help="also: imaging amplitudes free per redshift shell")
 ap.add_argument("--radial", type=int, default=2, help="Legendre order of the per-shell radial modes")
 ap.add_argument("--sample_bphi", action="store_true"); ap.add_argument("--seed0", type=int, default=1000)
 ap.add_argument("--tag", default="")
@@ -35,31 +34,26 @@ out = json.load(open(outfile)) if outfile.exists() else dict(args=vars(a), names
 trs = fm.tracers
 idx = {t: np.flatnonzero(fm.footprint[t].ravel()) for t in trs}
 t0 = time.time()
-T9, lab9 = data_space_templates(fm, trs, idx, imaging="imaging9")
+from templates import grid_template_compact, dense_from_compact, data_space_from_grid
+dlab, dcomp = grid_template_compact(fm, trs)
+dmaps = dense_from_compact(fm, dlab, dcomp)
+TD = data_space_from_grid(fm, trs, idx, dmaps, dlab)
 TR, labR = data_space_templates(fm, trs, idx, radial_order=a.radial)
-blocks, labels = [T9, TR], lab9 + labR
-if a.per_shell:
-    TS, labS = data_space_templates(fm, trs, idx, imaging="imaging9", per_shell=True)
-    blocks.append(TS); labels += labS
-T = np.concatenate([b for b in blocks if len(b)], 0)
-print(f"[syst] {len(T)} template vectors ({time.time()-t0:.0f}s): {len(lab9)} imaging, {len(labR)} radial"
-      + (f", {len(labS)} per-shell imaging" if a.per_shell else ""), flush=True)
-rows = lambda pred: [i for i, l in enumerate(labels) if pred(l)]
-is_img = lambda l: l.split(":")[1] == "all"
-img3 = set(SETS["imaging3"])
+labels = [f"{t}:{l}" for t, l in dlab] + labR
+T = np.concatenate([TD, TR], 0)
+print(f"[syst] {len(T)} template vectors ({time.time()-t0:.0f}s): {len(dlab)} DESI imaging, {len(labR)} radial", flush=True)
+nD = len(dlab)
+rows = lambda pred: [i for i, l in enumerate(labels) if pred(i, l)]
 configs = {
     "none": [],
-    "imaging3": rows(lambda l: is_img(l) and l.split(":")[-1] in img3),
-    "imaging9": rows(is_img),
-    "radial_P0": rows(lambda l: l.endswith(":P0")),
-    f"radial_P{a.radial}": rows(lambda l: ":P" in l),
-    f"imaging9+radial_P{a.radial}": rows(lambda l: is_img(l) or ":P" in l),
+    "desi": rows(lambda i, l: i < nD),
+    "radial_P0": rows(lambda i, l: l.endswith(":P0")),
+    f"radial_P{a.radial}": rows(lambda i, l: i >= nD),
+    "desi+radial_P0": rows(lambda i, l: i < nD or l.endswith(":P0")),
+    f"desi+radial_P{a.radial}": list(range(len(labels))),
 }
 for t in trs:
-    configs[f"imaging9_{t}only"] = rows(lambda l, t=t: is_img(l) and l.startswith(t))
-if a.per_shell:
-    configs["imaging9_per_shell"] = rows(lambda l: l.split(":")[1].isdigit())
-    configs[f"imaging9_per_shell+radial_P{a.radial}"] = configs["imaging9_per_shell"] + rows(lambda l: ":P" in l)
+    configs[f"desi_{t}only"] = rows(lambda i, l, t=t: i < nD and l.startswith(t))
 print("[syst] configs: " + ", ".join(f"{k} ({len(v)})" for k, v in configs.items()), flush=True)
 out["configs"] = {k: len(v) for k, v in configs.items()}
 

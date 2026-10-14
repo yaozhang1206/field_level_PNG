@@ -25,8 +25,9 @@ ap.add_argument("--sample_bphi", action="store_true", help="free b_phi, b_phidel
 ap.add_argument("--mclmc_step_factor", type=float, default=1.0); ap.add_argument("--mclmc_L", type=float, default=None); ap.add_argument("--mclmc_step", type=float, default=None)
 ap.add_argument("--resume", action="store_true", help="continue the chain in results/chain_<tag>.npz (position, step size, mass) without warmup")
 ap.add_argument("--adapt", default="auto", help="window (BlackJAX run, stores warmup) | loop (same adaptation, Python loop, no storage) | dual (identity mass) | auto (loop for res>=160)")
-ap.add_argument("--templates", default="none", help="imaging template amplitudes sampled with flat priors: none | imaging3 | imaging9")
-ap.add_argument("--contam", default="none", help="mock contamination: none | linear (random template amplitudes) | wsys (1/WEIGHT_SYS map of DR1)")
+ap.add_argument("--templates", default="none", help="imaging template amplitudes sampled with flat priors: none | desi (DESI DR1 PNG scheme: per tracer, z-bin, region, feature) | imaging3 | imaging9 (first Stage 4 setup)")
+ap.add_argument("--contam", default="none", help="mock contamination: none | linear (random template amplitudes) | wsys (DR1 1/WEIGHT_SYS per DESI z-bin) | wsys_allz (first setup: one map per tracer)")
+ap.add_argument("--intercepts", action="store_true", help="DESI scheme: add a free constant per tracer x shell x region (region renormalisation)")
 ap.add_argument("--contam_amp", type=float, default=0.02, help="rms of the true template amplitudes for --contam linear")
 a = ap.parse_args()
 L = 10000.0
@@ -34,13 +35,19 @@ cosmo, geoms, shells, nz = build()
 fm = ForwardModel(cosmo, shells, L=L, res=a.res, nz_funcs=nz, ang_mask=dr1_angular_mask(64))
 trs = [t for t in fm.tracers if t in a.tracers]
 if a.templates != "none" or a.contam == "linear":
-    from templates import grid_template_maps
-    tlabels, tmaps = grid_template_maps(fm, trs, a.templates if a.templates != "none" else "imaging9")
-    lay = ParamLayout(shells, sample_bphi=a.sample_bphi, templates=tlabels)
-    fm.set_templates(lay, tmaps)
+    from templates import grid_template_maps, grid_template_compact
+    if a.templates in ("desi", "none"):
+        tlabels, tcomp = grid_template_compact(fm, trs, intercepts=a.intercepts)
+        lay = ParamLayout(shells, sample_bphi=a.sample_bphi, templates=tlabels)
+        fm.set_templates_compact(lay, tcomp)
+    else:
+        tlabels, tmaps = grid_template_maps(fm, trs, a.templates)
+        lay = ParamLayout(shells, sample_bphi=a.sample_bphi, templates=tlabels)
+        fm.set_templates(lay, tmaps)
+    print(f"[templates] {a.templates}{' + intercepts' if a.intercepts else ''}: {len(tlabels)} amplitudes", flush=True)
 else:
     lay = ParamLayout(shells, sample_bphi=a.sample_bphi)
-tag = a.tag or f"{a.sampler}_res{a.res}_{a.tracers.replace('+','')}{'_linear' if a.linear else ''}{'_bprior%g' % a.bias_prior if a.bias_prior > 0 else ''}{'_bphi' if a.sample_bphi else ''}{'_sf%g' % a.mclmc_step_factor if a.mclmc_step_factor != 1 else ''}{'_T' + a.templates if a.templates != 'none' else ''}{'_C' + a.contam if a.contam != 'none' else ''}_fnl{a.fnl_true:g}_s{a.seed}"
+tag = a.tag or f"{a.sampler}_res{a.res}_{a.tracers.replace('+','')}{'_linear' if a.linear else ''}{'_bprior%g' % a.bias_prior if a.bias_prior > 0 else ''}{'_bphi' if a.sample_bphi else ''}{'_sf%g' % a.mclmc_step_factor if a.mclmc_step_factor != 1 else ''}{'_T' + a.templates if a.templates != 'none' else ''}{'_icpt' if a.intercepts else ''}{'_C' + a.contam if a.contam != 'none' else ''}_fnl{a.fnl_true:g}_s{a.seed}"
 th_true = lay.fiducial(a.fnl_true)
 if a.contam == "linear":
     a_true = np.random.default_rng(500 + a.seed).normal(0, a.contam_amp, len(lay.templates))
@@ -55,10 +62,11 @@ if a.bias_prior > 0 or a.sample_bphi:
         P = lay.prior(0.4); idx = np.where(np.diag(P) > 0)[0]; prior_sigma[idx] = 1.0 / np.sqrt(np.diag(P)[idx])
 post = FieldPosterior(fm, lay, tracers=trs, linear=a.linear, likelihood=a.likelihood, theta_prior_sigma=prior_sigma)
 d = post.mock(eps_true, th_true, seed=a.seed)
-if a.contam == "wsys":
-    from templates import wsys_contamination
+if a.contam in ("wsys", "wsys_allz"):
+    from templates import wsys_contamination, wsys_contamination_desi
+    cmap = wsys_contamination_desi if a.contam == "wsys" else wsys_contamination
     mu = post.model(eps_true, th_true)
-    cfac = jnp.concatenate([jnp.asarray(wsys_contamination(fm, t).ravel()[np.asarray(post.idx[t])]) for t in trs])
+    cfac = jnp.concatenate([jnp.asarray(cmap(fm, t).ravel()[np.asarray(post.idx[t])]) for t in trs])
     noise = d - mu
     d = mu * cfac + noise
     print(f"[contam] wsys modulation rms {float(jnp.std(cfac)):.3f} (min {float(cfac.min()):.3f}, max {float(cfac.max()):.3f})", flush=True)

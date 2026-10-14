@@ -234,10 +234,31 @@ class ForwardModel:
         self.tmpl_maps = jnp.asarray(maps, dtype=self.dtype).reshape(len(layout.templates), -1)
         self.tmpl_mask = {t: jnp.asarray([1.0 if tr == t else 0.0 for tr, _ in layout.templates]) for t in self.tracers}
 
+    def set_templates_compact(self, layout, comp):
+        """Compact templates (templates.grid_template_compact): per tracer, feature values F (n_feat, N) float32, voxel
+        group ids G (N,), and for every amplitude its (group, feature) cell. Contamination of tracer t:
+            c(x) = sum_f A[G(x), f] F_f(x),  A[g, f] = amplitude of (group g, feature f) (0 if not a template)."""
+        self.tmpl_compact = {t: dict(F=jnp.asarray(c["F"]), G=jnp.asarray(c["G"]), g=jnp.asarray(c["g"]), f=jnp.asarray(c["f"]),
+                                     k=jnp.asarray(c["k"]), shape=(c["n_groups"] + 1, len(c["feats"])))
+                             for t, c in comp.items()}
+
     def _contaminate(self, out, theta, layout):
-        if not getattr(layout, "templates", None) or getattr(self, "tmpl_maps", None) is None:
+        if not getattr(layout, "templates", None):
             return out
         a = theta[layout.t0:layout.t0 + len(layout.templates)]
+        if getattr(self, "tmpl_compact", None) is not None:
+            for t in out:
+                if t not in self.tmpl_compact:
+                    continue
+                c = self.tmpl_compact[t]
+                A = jnp.zeros(c["shape"], dtype=self.dtype).at[c["g"], c["f"]].set(a[c["k"]])
+                cx = jnp.zeros(out[t].size, dtype=self.dtype)
+                for fi in range(c["shape"][1]):
+                    cx = cx + A[c["G"], fi] * c["F"][fi]
+                out[t] = out[t] * (1.0 + cx.reshape(out[t].shape))
+            return out
+        if getattr(self, "tmpl_maps", None) is None:
+            return out
         for t in out:
             c = (a * self.tmpl_mask[t]) @ self.tmpl_maps
             out[t] = out[t] * (1.0 + c.reshape(out[t].shape))
