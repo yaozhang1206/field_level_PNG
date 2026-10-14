@@ -307,7 +307,7 @@ def data_space_from_grid(fm, tracers, idx, maps, labels):
     return T
 
 
-def grid_template_compact(fm, tracers, intercepts=False, voxel_avg=True):
+def grid_template_compact(fm, tracers, intercepts=False, voxel_avg=True, quadratic=()):
     """Memory-light version of grid_template_maps_desi (each voxel belongs to at most one shell x region group):
     returns labels [(tracer, 'z..:region:feature')] and, per tracer, dict(F=(n_feat, res^3) float32 standardised
     feature values of the voxel's own region, G=(res^3,) int32 group id (0 = no template), g=(K_t,) group of each
@@ -339,6 +339,27 @@ def grid_template_compact(fm, tracers, intercepts=False, voxel_avg=True):
                         tk = np.where(m, T[k], np.nan)                    # region-standardised, NaN outside the region
                         F[fi, sel] = np.nan_to_num(voxel_average(fm, tk)[sel]) if voxel_avg else T[k][pix][sel]
                     labels.append((t, f"z{s.zlo:g}-{s.zhi:g}:{reg}:{n}")); gl.append(ng); fl.append(fi); kl.append(len(labels) - 1)
+        if t in quadratic:
+            # full quadratic: products of the (voxel-averaged, region-standardised) linear features within each group
+            base = [n for n in feats if n != "INTERCEPT"]
+            pairs = [(a_, b_) for ia, a_ in enumerate(base) for b_ in base[ia:]]
+            Fq = np.zeros((len(pairs), fm.res ** 3), np.float32)
+            for j, (a_, b_) in enumerate(pairs):
+                Fq[j] = F[feats.index(a_)] * F[feats.index(b_)]
+            qnames = [f"{a_}*{b_}" for a_, b_ in pairs]
+            F = np.concatenate([F, Fq]); feats = feats + qnames
+            for i, s in enumerate(fm.shells):
+                if s.tracer != t:
+                    continue
+                zb = (s.zlo, s.zhi); names = DESI_FEATURES[t][zb]
+                inshell = np.asarray(fm.nbar_cell[i]).ravel() > 0
+                for reg in DESI_REGIONS[t]:
+                    gids = np.unique(G[inshell & (G > 0) & fmap[(zb, reg)][2][pix]])
+                    for gid in gids:
+                        for j, (a_, b_) in enumerate(pairs):
+                            if a_ in names and b_ in names:
+                                labels.append((t, f"z{s.zlo:g}-{s.zhi:g}:{reg}:{a_}*{b_}")); gl.append(gid)
+                                fl.append(feats.index(f"{a_}*{b_}")); kl.append(len(labels) - 1)
         comp[t] = dict(F=F, G=G, g=np.array(gl), f=np.array(fl), k=np.array(kl), n_groups=ng, feats=feats)
     return labels, comp
 
